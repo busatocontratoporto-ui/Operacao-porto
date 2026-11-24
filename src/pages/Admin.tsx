@@ -234,24 +234,25 @@ export default function Admin() {
     if (isAdmin) fetchUsers();
   }, [isAdmin, fetchUsers]);
 
+  const fetchAccessProfiles = useCallback(async () => {
+    const { data } = await supabase
+      .from('access_profiles')
+      .select('id, name')
+      .order('name', { ascending: true });
+    if (!data) return;
+    const map = new Map<string, { id: string; name: string }>();
+    data.forEach((p) => {
+      const cleanName = (p.name || '').trim();
+      if (cleanName && !map.has(cleanName)) {
+        map.set(cleanName, { id: p.id, name: cleanName });
+      }
+    });
+    setAccessProfiles(Array.from(map.values()));
+  }, []);
+
   useEffect(() => {
-    if (isAdmin) {
-      supabase
-        .from('access_profiles')
-        .select('id, name')
-        .then(({ data }) => {
-          if (!data) return;
-          const map = new Map<string, { id: string; name: string }>();
-          data.forEach((p) => {
-            const cleanName = (p.name || '').trim();
-            if (cleanName && !map.has(cleanName)) {
-              map.set(cleanName, { id: p.id, name: cleanName });
-            }
-          });
-          setAccessProfiles(Array.from(map.values()));
-        });
-    }
-  }, [isAdmin]);
+    if (isAdmin) fetchAccessProfiles();
+  }, [isAdmin, fetchAccessProfiles]);
 
   // Helper para verificar se usuário tem acesso a um módulo/página
   function getUserPagePerm(u: UserWithRole, pageKey: string): PermEntry {
@@ -368,11 +369,14 @@ export default function Admin() {
           }));
           await supabase.from('user_permissions').insert(defaultPerms);
         }
-        await supabase.from('user_roles').insert({
-          user_id: userId,
-          role: 'user',
-          profile_id: newUser.profile_id || null,
-        });
+        await supabase.from('user_roles').upsert(
+          {
+            user_id: userId,
+            role: 'user',
+            profile_id: newUser.profile_id || null,
+          },
+          { onConflict: 'user_id,role' }
+        );
 
         await logAudit({
           action: 'user_created',
@@ -579,6 +583,7 @@ export default function Admin() {
   }
 
   function openEditUser(targetUser: UserWithRole) {
+    fetchAccessProfiles();
     setEditUserDialog(targetUser);
     setEditName(targetUser.full_name);
     setEditEmail(targetUser.email);
@@ -806,7 +811,13 @@ export default function Admin() {
             </TabsTrigger>
           </TabsList>
 
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <Dialog
+            open={dialogOpen}
+            onOpenChange={(open) => {
+              setDialogOpen(open);
+              if (open) fetchAccessProfiles();
+            }}
+          >
             <DialogTrigger asChild>
               <Button size="sm">
                 <Plus className="w-4 h-4 mr-2" /> Novo Usuário
@@ -1289,7 +1300,12 @@ export default function Admin() {
 
         {/* ── ABA 3: PERFIS DE ACESSO ── */}
         <TabsContent value="perfis">
-          <PerfisDeAcesso onProfilesChanged={fetchUsers} />
+          <PerfisDeAcesso
+            onProfilesChanged={() => {
+              fetchUsers();
+              fetchAccessProfiles();
+            }}
+          />
         </TabsContent>
       </Tabs>
 
