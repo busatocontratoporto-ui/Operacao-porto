@@ -439,6 +439,29 @@ async function isCcoBaseCleared(): Promise<boolean> {
   return false;
 }
 
+async function fetchAllCloudRows(tableName: string): Promise<{ id: number; payload: any }[]> {
+  const db = supabase as any;
+  const pageSize = 1000;
+  const allRows: { id: number; payload: any }[] = [];
+  let offset = 0;
+
+  while (true) {
+    const { data, error } = await db
+      .from(tableName)
+      .select("id, payload")
+      .order("id", { ascending: true })
+      .range(offset, offset + pageSize - 1);
+
+    if (error) throw error;
+    if (!Array.isArray(data) || data.length === 0) break;
+    allRows.push(...data);
+    if (data.length < pageSize) break;
+    offset += pageSize;
+  }
+
+  return allRows;
+}
+
 async function ensureMemoryStore(): Promise<{
   registros: RegistroOperacional[];
   cadastros: CadastrosData;
@@ -448,14 +471,10 @@ async function ensureMemoryStore(): Promise<{
       const map = new Map<number, RegistroOperacional>();
       let loadedFromCloud = false;
 
-      // 1. Prioriza leitura em nuvem (Supabase) para operação multiusuário
+      // 1. Prioriza leitura paginada em nuvem (Supabase) para preservar todo o histórico (> 1.000 linhas)
       try {
-        const db = supabase as any;
-        const { data: sbRows, error } = await db
-          .from("busato_registros")
-          .select("id, payload")
-          .order("id", { ascending: true });
-        if (!error && Array.isArray(sbRows) && sbRows.length > 0) {
+        const sbRows = await fetchAllCloudRows("busato_registros");
+        if (sbRows.length > 0) {
           for (const row of sbRows) {
             if (row?.payload) {
               const calc = recalculateRecordMetrics(row.payload);
@@ -1157,7 +1176,7 @@ export function computeAnalyticsData(filtered: RegistroOperacional[]) {
     porTipoEquipamento,
     porFrente,
     porMotivoCorretiva,
-    ultimasCorretivas: ultimasCorretivas.sort((a, b) => b.data.localeCompare(a.data)).slice(0, 300),
+    ultimasCorretivas: ultimasCorretivas.sort((a, b) => b.data.localeCompare(a.data)),
     listaAtrasos: listaAtrasos.sort((a, b) => b.data.localeCompare(a.data)),
     listaTrocasReserva: listaTrocasReserva.sort((a, b) => b.data.localeCompare(a.data)),
     porSolicitanteDesvio,
@@ -2334,14 +2353,10 @@ export async function ensureProgramacaoStore(): Promise<ProgramacaoItem[]> {
       const map = new Map<number, ProgramacaoItem>();
       let loadedFromCloud = false;
 
-      // 1. Prioriza leitura em nuvem (Supabase)
+      // 1. Prioriza leitura paginada em nuvem (Supabase)
       try {
-        const db = supabase as any;
-        const { data: sbRows, error } = await db
-          .from("busato_programacao")
-          .select("id, payload")
-          .order("id", { ascending: true });
-        if (!error && Array.isArray(sbRows) && sbRows.length > 0) {
+        const sbRows = await fetchAllCloudRows("busato_programacao");
+        if (sbRows.length > 0) {
           for (const row of sbRows) {
             if (row?.payload) map.set(row.payload.id, row.payload);
           }
@@ -2530,12 +2545,22 @@ export async function apiBulkImportProgramacaoItems(items: Partial<ProgramacaoIt
   let maxId = list.reduce((m, p) => Math.max(m, p.id || 0), 0);
   const created: ProgramacaoItem[] = [];
 
-  // Replace existing items on the same dates being imported
+  // Replace existing items on the same dates being imported (preserves all other dates/weeks)
   const importedDates = new Set(items.map((i) => i.data).filter(Boolean));
+  const importedDatesArr = Array.from(importedDates) as string[];
   for (let i = list.length - 1; i >= 0; i--) {
     if (importedDates.has(list[i].data)) {
       list.splice(i, 1);
     }
+  }
+  if (importedDatesArr.length > 0) {
+    try {
+      const db = supabase as any;
+      await Promise.all([
+        db.from("busato_programacao").delete().in("data", importedDatesArr),
+        db.from("busato_registros").delete().in("data", importedDatesArr),
+      ]);
+    } catch {}
   }
 
   for (const payload of items) {
