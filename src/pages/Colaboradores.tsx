@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Search, Users, Eye, Plus, Edit, Trash2, Loader2, Camera, X, FileUp, FileText, Download, Upload, CheckSquare, UserCheck, Phone, Calendar } from 'lucide-react';
+import { Search, Users, Eye, Plus, Edit, Trash2, Loader2, Camera, X, FileUp, FileText, Download, Upload, CheckSquare, Phone, Calendar } from 'lucide-react';
 import {
   parseColaboradoresWorkbook,
   normalizeCpf,
@@ -497,37 +497,6 @@ export default function Colaboradores() {
                   {STATUS_COLABORADOR_OPTIONS.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
                 </SelectContent>
               </Select>
-            </div>
-
-            <div className="space-y-1.5 sm:col-span-2 bg-muted/30 p-3 rounded-xl border border-border/60">
-              <Label className="text-xs font-semibold">Contrato / Vinculação Responsável (Opcional)</Label>
-              <Select value={data.contrato_vinculado || 'none'} onValueChange={v => setData({ ...data, contrato_vinculado: v === 'none' ? '' : v, departamento: v === 'none' ? (data.departamento || 'Contrato Porto') : v })}>
-                <SelectTrigger><SelectValue placeholder="Selecione o contrato / setor" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Padrão (Contrato Porto)</SelectItem>
-                  {departamentos.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5 sm:col-span-2 bg-primary/5 p-3 rounded-xl border border-primary/20">
-              <Label className="text-xs font-semibold flex items-center gap-1.5 text-primary">
-                <UserCheck className="w-4 h-4 text-primary" /> Gestor Imediato / Avaliador Responsável (Opcional)
-              </Label>
-              <Select value={data.encarregado_id || 'none'} onValueChange={v => setData({ ...data, encarregado_id: v })}>
-                <SelectTrigger><SelectValue placeholder="Selecione o gestor responsável por avaliar este colaborador" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Nenhum (Sem gestor direto / Topo)</SelectItem>
-                  {funcionarios.filter(f => f.id !== (data as any).id).map(f => (
-                    <SelectItem key={f.id} value={f.id}>
-                      👤 {f.nome} — {f.cargo} ({f.departamento})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-[11px] text-muted-foreground mt-1">
-                Define o gestor direto responsável por avaliar este colaborador nas avaliações e no Nine Box, independente do setor ou contrato em que atue.
-              </p>
             </div>
           </div>
         </div>
