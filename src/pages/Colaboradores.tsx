@@ -1,8 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Search, Users, Eye, Plus, Edit, Trash2, Loader2, Camera, X, FileUp, FileText, Download, Upload, CheckSquare, UserCheck } from 'lucide-react';
-import { readExcelRows, parseExcelDate } from '@/lib/excel';
+import { Search, Users, Eye, Plus, Edit, Trash2, Loader2, Camera, X, FileUp, FileText, Download, Upload, CheckSquare, UserCheck, Phone, Calendar } from 'lucide-react';
+import {
+  parseColaboradoresWorkbook,
+  normalizeCpf,
+  formatCpf,
+} from '@/lib/colaboradores-import';
 import { Input } from '@/components/ui/input';
 import { FastInput } from '@/components/ui/fast-input';
 import { Button } from '@/components/ui/button';
@@ -23,12 +27,26 @@ import { Building2 } from 'lucide-react';
 
 interface Funcionario {
   id: string; nome: string; email: string; departamento: string; cargo: string;
-  contrato_vinculado?: string;
-  data_admissao: string; escolaridade: string; graduacao: string;
+  contrato_vinculado?: string | null;
+  cpf?: string | null;
+  telefone?: string | null;
+  frente_atendimento?: string | null;
+  polivalencia?: string | null;
+  status_colaborador?: string | null;
+  data_admissao: string | null;
+  ultima_ferias?: string | null;
+  escolaridade: string; graduacao: string;
   pos_graduacao: boolean; pos_graduacao_tipo: string;
   feedbacks_recebidos: number; feedbacks_resolvidos: number;
   foto_url: string; turno: string; letra: string; encarregado_id: string | null;
 }
+
+const STATUS_COLABORADOR_OPTIONS = [
+  { value: 'ATIVO', label: 'Ativo' },
+  { value: 'RESERVA/CB', label: 'Reserva / CB' },
+  { value: 'AFASTADO', label: 'Afastado' },
+  { value: 'DESLIGADO', label: 'Desligado' },
+];
 
 const departamentos = DEPARTAMENTOS;
 const escolaridades = ['Ensino Fundamental', 'Ensino Médio', 'Ensino Superior Cursando', 'Ensino Superior Completo', 'Pós-Graduação', 'Mestrado', 'Doutorado'];
@@ -52,6 +70,7 @@ export default function Colaboradores() {
   const [search, setSearch] = useState('');
   const [deptFilter, setDeptFilter] = useState('todos');
   const [turnoFilter, setTurnoFilter] = useState('todos');
+  const [statusFilter, setStatusFilter] = useState('ATIVOS');
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
 
   // Sincroniza filtro se houver departamento travado ou efetivo
@@ -64,7 +83,7 @@ export default function Colaboradores() {
   }, [isDepartmentLocked, userDepartment, effectiveDepartment]);
 
   // Reset página ao mudar filtros
-  useEffect(() => { setCurrentPage(1); }, [search, deptFilter, turnoFilter]);
+  useEffect(() => { setCurrentPage(1); }, [search, deptFilter, turnoFilter, statusFilter]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -80,7 +99,12 @@ export default function Colaboradores() {
   const [currentPage, setCurrentPage] = useState(1);
 
   const initialDept = (isDepartmentLocked && userDepartment) ? userDepartment : '';
-  const emptyForm = { nome: '', email: '', cargo: '', departamento: initialDept, contrato_vinculado: '', data_admissao: '', escolaridade: '', graduacao: '', pos_graduacao: false, pos_graduacao_tipo: '', turno: '', letra: '', encarregado_id: 'none' };
+  const emptyForm = {
+    nome: '', email: '', cpf: '', telefone: '', cargo: '', departamento: initialDept,
+    contrato_vinculado: '', frente_atendimento: '', polivalencia: '', status_colaborador: 'ATIVO',
+    data_admissao: '', ultima_ferias: '', escolaridade: '', graduacao: '',
+    pos_graduacao: false, pos_graduacao_tipo: '', turno: '', letra: '', encarregado_id: 'none',
+  };
   const [newData, setNewData] = useState(emptyForm);
   const [editData, setEditData] = useState({ id: '', foto_url: '', ...emptyForm });
   const [newPhotoFile, setNewPhotoFile] = useState<File | null>(null);
@@ -105,7 +129,13 @@ export default function Colaboradores() {
   }
 
   const filtered = funcionarios.filter((f) => {
-    const matchSearch = f.nome.toLowerCase().includes(search.toLowerCase()) || f.cargo.toLowerCase().includes(search.toLowerCase());
+    const q = search.toLowerCase();
+    const matchSearch =
+      f.nome.toLowerCase().includes(q) ||
+      f.cargo.toLowerCase().includes(q) ||
+      (f.cpf || '').includes(q.replace(/\D/g, '') || '__none__') ||
+      (f.frente_atendimento || '').toLowerCase().includes(q) ||
+      (f.polivalencia || '').toLowerCase().includes(q);
     
     // Filtragem por departamento travado ou selecionado
     let matchDept = true;
@@ -118,6 +148,13 @@ export default function Colaboradores() {
       matchDept = f.departamento === deptFilter || f.contrato_vinculado === deptFilter;
     }
 
+    const st = (f.status_colaborador || 'ATIVO').toUpperCase();
+    let matchStatus = true;
+    if (statusFilter === 'ATIVOS') matchStatus = st === 'ATIVO' || st === 'RESERVA/CB';
+    else if (statusFilter === 'RESERVA/CB') matchStatus = st === 'RESERVA/CB';
+    else if (statusFilter === 'AFASTADO') matchStatus = st === 'AFASTADO';
+    else if (statusFilter === 'DESLIGADO') matchStatus = st === 'DESLIGADO';
+
     const matchTurno = turnoFilter === 'todos' || f.turno === turnoFilter;
     const isSelf = !!user?.email && f.email?.toLowerCase().trim() === user.email.toLowerCase().trim();
     const loggedFuncId = user?.email ? funcionarios.find(fn => fn.email?.toLowerCase().trim() === user.email.toLowerCase().trim())?.id : null;
@@ -125,7 +162,7 @@ export default function Colaboradores() {
 
     const matchHierarchy = isSelf || isDirectSubordinate || canViewHierarchy(f.cargo, isSelf, isDirectSubordinate);
 
-    return matchSearch && matchDept && matchTurno && matchHierarchy;
+    return matchSearch && matchDept && matchStatus && matchTurno && matchHierarchy;
   });
 
   // Paginação: recalcula sempre que filtros mudam
@@ -197,16 +234,6 @@ export default function Colaboradores() {
   }
 
 
-  function parseTurno(raw: string): string {
-    const lower = raw.toLowerCase().trim();
-    if (lower === 'adm' || lower === 'administrativo') return 'adm';
-    if (lower.includes('dia') && lower.includes('a')) return 'dia_a';
-    if (lower.includes('dia') && lower.includes('b')) return 'dia_b';
-    if (lower.includes('noite') && lower.includes('a')) return 'noite_a';
-    if (lower.includes('noite') && lower.includes('b')) return 'noite_b';
-    return '';
-  }
-
   async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
     if (!canCreate('colaboradores')) { toast.error('Você não tem permissão para importar colaboradores.'); return; }
     const file = e.target.files?.[0];
@@ -214,27 +241,68 @@ export default function Colaboradores() {
     setImporting(true);
     try {
       const data = await file.arrayBuffer();
-      const rows = await readExcelRows(data);
-      const records = rows.map(row => ({
-        nome: String(row['Nome'] || '').trim(), email: String(row['Email'] || '').trim(),
-        cargo: String(row['Cargo'] || '').trim(), departamento: String(row['Departamento'] || '').trim(),
-        data_admissao: parseExcelDate(row['Data Admissão'] || row['Data Admissao']) || undefined,
-        escolaridade: String(row['Escolaridade'] || '').trim(), graduacao: String(row['Graduação'] || row['Graduacao'] || '').trim(),
-        pos_graduacao: String(row['Pós-Graduação'] || '').toLowerCase() === 'sim',
-        pos_graduacao_tipo: String(row['Tipo Pós-Graduação'] || '').trim(),
-        turno: parseTurno(String(row['Turno'] || '')),
-        letra: String(row['Letra'] || '').trim(),
-      })).filter(r => r.nome && r.cargo && r.departamento);
-      if (records.length === 0) { toast.error('Nenhum registro válido encontrado.'); setImporting(false); return; }
-      const toInsert = records.map(r => {
-        const obj: Record<string, unknown> = { nome: r.nome, email: r.email, cargo: r.cargo, departamento: r.departamento, escolaridade: r.escolaridade, graduacao: r.graduacao, pos_graduacao: r.pos_graduacao, pos_graduacao_tipo: r.pos_graduacao_tipo, turno: r.turno, letra: r.letra };
-        if (r.data_admissao) obj.data_admissao = r.data_admissao;
-        return obj;
+      const records = await parseColaboradoresWorkbook(data);
+      if (records.length === 0) {
+        toast.error('Nenhum colaborador válido encontrado na planilha.');
+        setImporting(false);
+        return;
+      }
+
+      const byCpf = new Map<string, Funcionario>();
+      const byName = new Map<string, Funcionario>();
+      funcionarios.forEach((f) => {
+        if (f.cpf) byCpf.set(normalizeCpf(f.cpf), f);
+        byName.set(f.nome.trim().toUpperCase(), f);
       });
-      const { error } = await supabase.from('funcionarios').insert(toInsert);
-      if (error) toast.error('Erro ao importar: ' + error.message);
-      else { toast.success(`${records.length} funcionário(s) importado(s)!`); fetchFuncionarios(true); }
-    } catch { toast.error('Erro ao ler arquivo.'); }
+
+      const toInsert: Record<string, unknown>[] = [];
+      let updatedCount = 0;
+
+      for (const r of records) {
+        const existing = (r.cpf ? byCpf.get(r.cpf) : undefined) || byName.get(r.nome.trim().toUpperCase());
+        const payload: Record<string, unknown> = {
+          nome: r.nome,
+          cpf: r.cpf,
+          telefone: r.telefone || null,
+          cargo: r.cargo,
+          departamento: r.departamento,
+          contrato_vinculado: r.contrato_vinculado,
+          turno: r.turno,
+          letra: r.letra,
+          frente_atendimento: r.frente_atendimento || null,
+          polivalencia: r.polivalencia || null,
+          status_colaborador: r.status_colaborador,
+          escolaridade: r.escolaridade,
+          graduacao: r.graduacao,
+          pos_graduacao: r.pos_graduacao,
+          pos_graduacao_tipo: r.pos_graduacao_tipo,
+        };
+        if (r.email) payload.email = r.email;
+        if (r.data_admissao) payload.data_admissao = r.data_admissao;
+        if (r.ultima_ferias) payload.ultima_ferias = r.ultima_ferias;
+
+        if (existing) {
+          const { error } = await supabase.from('funcionarios').update(payload).eq('id', existing.id);
+          if (!error) updatedCount++;
+        } else {
+          toInsert.push(payload);
+        }
+      }
+
+      let insertedCount = 0;
+      for (let i = 0; i < toInsert.length; i += 100) {
+        const chunk = toInsert.slice(i, i + 100);
+        const { error } = await supabase.from('funcionarios').insert(chunk);
+        if (error) throw error;
+        insertedCount += chunk.length;
+      }
+
+      toast.success(`Importação concluída: ${insertedCount} novo(s), ${updatedCount} atualizado(s)!`);
+      fetchFuncionarios(true);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erro ao ler arquivo.';
+      toast.error('Erro ao importar: ' + msg);
+    }
     setImporting(false);
     if (importFileRef.current) importFileRef.current.value = '';
   }
@@ -246,11 +314,20 @@ export default function Colaboradores() {
     let foto_url = '';
     try { if (newPhotoFile) foto_url = await uploadPhoto(newPhotoFile); } catch { toast.error('Erro ao enviar foto'); setUploading(false); return; }
     
+    const cleanCpf = normalizeCpf(newData.cpf);
     const insertData: Record<string, unknown> = { 
       nome: newData.nome, 
-      email: newData.email, 
+      email: newData.email || null,
+      cpf: cleanCpf || null,
+      telefone: newData.telefone || null,
       cargo: newData.cargo, 
       departamento: newData.departamento, 
+      contrato_vinculado: newData.contrato_vinculado || null,
+      frente_atendimento: newData.frente_atendimento || null,
+      polivalencia: newData.polivalencia || null,
+      status_colaborador: newData.status_colaborador || 'ATIVO',
+      data_admissao: newData.data_admissao || null,
+      ultima_ferias: newData.ultima_ferias || null,
       escolaridade: newData.escolaridade, 
       graduacao: newData.graduacao, 
       pos_graduacao: newData.pos_graduacao, 
@@ -259,19 +336,9 @@ export default function Colaboradores() {
       letra: newData.letra, 
       foto_url 
     };
-    if (newData.contrato_vinculado) insertData.contrato_vinculado = newData.contrato_vinculado;
-    if (newData.data_admissao) insertData.data_admissao = newData.data_admissao;
     if (newData.encarregado_id && newData.encarregado_id !== 'none') insertData.encarregado_id = newData.encarregado_id;
 
-    let { data: inserted, error } = await supabase.from('funcionarios').insert(insertData).select().single();
-
-    // Fallback: se a coluna contrato_vinculado ainda não existir no schema do Supabase, remove a propriedade e repete a inserção
-    if (error && (error.code === 'PGRST204' || error.message?.includes('contrato_vinculado'))) {
-      delete insertData.contrato_vinculado;
-      const res = await supabase.from('funcionarios').insert(insertData).select().single();
-      inserted = res.data;
-      error = res.error;
-    }
+    const { data: inserted, error } = await supabase.from('funcionarios').insert(insertData).select().single();
 
     if (error) { 
       toast.error('Erro ao cadastrar: ' + (error.message || 'Verifique os dados.')); 
@@ -295,7 +362,29 @@ export default function Colaboradores() {
 
   function openEdit(f: Funcionario) {
     if (!canEdit('colaboradores')) { toast.error('Você não tem permissão para editar colaboradores.'); return; }
-    setEditData({ id: f.id, nome: f.nome, email: f.email || '', cargo: f.cargo, departamento: f.departamento, contrato_vinculado: f.contrato_vinculado || '', foto_url: f.foto_url || '', data_admissao: f.data_admissao || '', escolaridade: f.escolaridade || '', graduacao: f.graduacao || '', pos_graduacao: f.pos_graduacao || false, pos_graduacao_tipo: f.pos_graduacao_tipo || '', turno: f.turno || '', letra: f.letra || '', encarregado_id: f.encarregado_id || 'none' });
+    setEditData({
+      id: f.id,
+      nome: f.nome,
+      email: f.email || '',
+      cpf: formatCpf(f.cpf) || '',
+      telefone: f.telefone || '',
+      cargo: f.cargo,
+      departamento: f.departamento,
+      contrato_vinculado: f.contrato_vinculado || '',
+      frente_atendimento: f.frente_atendimento || '',
+      polivalencia: f.polivalencia || '',
+      status_colaborador: f.status_colaborador || 'ATIVO',
+      foto_url: f.foto_url || '',
+      data_admissao: f.data_admissao || '',
+      ultima_ferias: f.ultima_ferias || '',
+      escolaridade: f.escolaridade || '',
+      graduacao: f.graduacao || '',
+      pos_graduacao: f.pos_graduacao || false,
+      pos_graduacao_tipo: f.pos_graduacao_tipo || '',
+      turno: f.turno || '',
+      letra: f.letra || '',
+      encarregado_id: f.encarregado_id || 'none',
+    });
     setEditPhotoFile(null); setEditPhotoPreview(f.foto_url || ''); setEditDocFiles([]); setEditOpen(true);
   }
 
@@ -306,11 +395,20 @@ export default function Colaboradores() {
     let foto_url = editData.foto_url;
     try { if (editPhotoFile) foto_url = await uploadPhoto(editPhotoFile); } catch { toast.error('Erro foto'); setUploading(false); return; }
 
+    const cleanCpf = normalizeCpf(editData.cpf);
     const updateData: Record<string, unknown> = { 
       nome: editData.nome, 
-      email: editData.email, 
+      email: editData.email || null,
+      cpf: cleanCpf || null,
+      telefone: editData.telefone || null,
       cargo: editData.cargo, 
       departamento: editData.departamento, 
+      contrato_vinculado: editData.contrato_vinculado || null,
+      frente_atendimento: editData.frente_atendimento || null,
+      polivalencia: editData.polivalencia || null,
+      status_colaborador: editData.status_colaborador || 'ATIVO',
+      data_admissao: editData.data_admissao || null,
+      ultima_ferias: editData.ultima_ferias || null,
       escolaridade: editData.escolaridade, 
       graduacao: editData.graduacao, 
       pos_graduacao: editData.pos_graduacao, 
@@ -320,17 +418,8 @@ export default function Colaboradores() {
       encarregado_id: editData.encarregado_id && editData.encarregado_id !== 'none' ? editData.encarregado_id : null, 
       foto_url 
     };
-    if (editData.contrato_vinculado) updateData.contrato_vinculado = editData.contrato_vinculado;
-    if (editData.data_admissao) updateData.data_admissao = editData.data_admissao;
 
-    let { error } = await supabase.from('funcionarios').update(updateData).eq('id', editData.id);
-
-    // Fallback: se a coluna contrato_vinculado não existir no schema do Supabase, remove a propriedade e repete a atualização
-    if (error && (error.code === 'PGRST204' || error.message?.includes('contrato_vinculado'))) {
-      delete updateData.contrato_vinculado;
-      const res = await supabase.from('funcionarios').update(updateData).eq('id', editData.id);
-      error = res.error;
-    }
+    const { error } = await supabase.from('funcionarios').update(updateData).eq('id', editData.id);
 
     if (editDocFiles.length > 0) {
       for (const file of editDocFiles) {
@@ -376,13 +465,38 @@ export default function Colaboradores() {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">E-mail Corporativo / Pessoal</Label>
-              <FastInput value={data.email} onValueChange={v => setData({ ...data, email: v })} placeholder="email@empresa.com" type="email" />
+              <Label className="text-xs font-semibold">CPF</Label>
+              <FastInput value={data.cpf} onValueChange={v => setData({ ...data, cpf: v })} placeholder="000.000.000-00" />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Telefone / Contato</Label>
+              <FastInput value={data.telefone} onValueChange={v => setData({ ...data, telefone: v })} placeholder="(27) 99999-9999" />
             </div>
 
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold">Data de Admissão</Label>
               <Input type="date" value={data.data_admissao} onChange={e => setData({ ...data, data_admissao: e.target.value })} />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Última Data de Férias</Label>
+              <Input type="date" value={data.ultima_ferias} onChange={e => setData({ ...data, ultima_ferias: e.target.value })} />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">E-mail Corporativo / Pessoal</Label>
+              <FastInput value={data.email} onValueChange={v => setData({ ...data, email: v })} placeholder="email@empresa.com" type="email" />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Status</Label>
+              <Select value={data.status_colaborador || 'ATIVO'} onValueChange={v => setData({ ...data, status_colaborador: v })}>
+                <SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger>
+                <SelectContent>
+                  {STATUS_COLABORADOR_OPTIONS.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-1.5">
@@ -446,6 +560,14 @@ export default function Colaboradores() {
                 <SelectTrigger><SelectValue placeholder="Selecione a escala" /></SelectTrigger>
                 <SelectContent>{TURNOS.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}</SelectContent>
               </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Atendimento / Equipamento Habitual</Label>
+              <FastInput value={data.frente_atendimento} onValueChange={v => setData({ ...data, frente_atendimento: v })} placeholder="Ex: PIPA ASPERSÃO TPM, RETROESCAVADEIRA" />
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label className="text-xs font-semibold">Polivalência / Equipamentos Habilitados</Label>
+              <FastInput value={data.polivalencia} onValueChange={v => setData({ ...data, polivalencia: v })} placeholder="Ex: RE/PC, PP/CA, TODOS EQUIPAMENTOS" />
             </div>
           </div>
         </div>
@@ -544,6 +666,16 @@ export default function Colaboradores() {
           <SelectContent>
             <SelectItem value="todos">Todos Turnos</SelectItem>
             {TURNOS.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="Situação" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ATIVOS">Ativos (Padrão)</SelectItem>
+            <SelectItem value="RESERVA/CB">Reserva / CB</SelectItem>
+            <SelectItem value="AFASTADO">Afastados</SelectItem>
+            <SelectItem value="DESLIGADO">Desligados</SelectItem>
+            <SelectItem value="TODOS">Todos Status</SelectItem>
           </SelectContent>
         </Select>
         {canCreate('colaboradores') && (
@@ -666,13 +798,33 @@ export default function Colaboradores() {
                   <div className="flex flex-wrap justify-center gap-1.5 mt-3">
                     <HierarchyBadge cargo={f.cargo} />
                     <span className="inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground">{f.departamento}</span>
-                    {f.contrato_vinculado && (
+                    {f.status_colaborador && f.status_colaborador !== 'ATIVO' && (
+                      <span className={`inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        f.status_colaborador === 'DESLIGADO'
+                          ? 'bg-destructive/15 text-destructive'
+                          : f.status_colaborador === 'AFASTADO'
+                          ? 'bg-orange-500/15 text-orange-600'
+                          : 'bg-amber-500/15 text-amber-700'
+                      }`}>
+                        {f.status_colaborador}
+                      </span>
+                    )}
+                    {f.contrato_vinculado && f.contrato_vinculado !== f.departamento && (
                       <span className="inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20" title={`Vinculado ao ${f.contrato_vinculado}`}>
                         📍 Vinculado: {f.contrato_vinculado}
                       </span>
                     )}
                     {turnoLabel && <span className="inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded-full bg-chart-3/10 text-chart-3">{turnoLabel}</span>}
+                    {f.frente_atendimento && <span className="inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600">{f.frente_atendimento}</span>}
+                    {f.polivalencia && <span className="inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700" title="Polivalência / Observação">{f.polivalencia}</span>}
                   </div>
+                  {(f.telefone || f.data_admissao || f.ultima_ferias) && (
+                    <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground pt-1">
+                      {f.telefone && <span className="inline-flex items-center gap-1"><Phone className="w-3 h-3" />{f.telefone}</span>}
+                      {f.data_admissao && <span className="inline-flex items-center gap-1"><Calendar className="w-3 h-3" />Adm: {new Date(f.data_admissao + 'T00:00:00').toLocaleDateString('pt-BR')}</span>}
+                      {f.ultima_ferias && <span className="inline-flex items-center gap-1 text-teal-600 font-medium">Férias: {new Date(f.ultima_ferias + 'T00:00:00').toLocaleDateString('pt-BR')}</span>}
+                    </div>
+                  )}
                 </div>
                 
                 <div className="w-full mt-2 pt-4 border-t border-border/50">

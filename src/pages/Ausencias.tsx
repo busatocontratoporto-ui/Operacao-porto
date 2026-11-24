@@ -29,6 +29,7 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { useAuth } from '@/contexts/AuthContext';
 import { DEPARTAMENTOS } from '@/lib/departments';
 import { Building2 } from 'lucide-react';
+import { calcularSituacaoFerias } from '@/lib/colaboradores-import';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface Attendance {
@@ -55,7 +56,19 @@ interface Warning {
   employee_name?: string;
 }
 
-interface Func { id: string; nome: string; turno: string; letra: string; cargo: string; departamento: string; foto_url?: string; }
+interface Func {
+  id: string;
+  nome: string;
+  turno: string;
+  letra: string;
+  cargo: string;
+  departamento: string;
+  contrato_vinculado?: string | null;
+  status_colaborador?: string | null;
+  data_admissao?: string | null;
+  ultima_ferias?: string | null;
+  foto_url?: string;
+}
 
 const statusLabels: Record<string, string> = {
   presente: 'Presente', falta_injustificada: 'Falta Injustificada', falta_justificada: 'Falta Justificada',
@@ -112,6 +125,9 @@ export default function PontoFerias() {
   const [showPontoTable, setShowPontoTable] = useState(false);
   const [showFeriasTable, setShowFeriasTable] = useState(false);
   const [showWarningsTable, setShowWarningsTable] = useState(false);
+  const [feriasFilter, setFeriasFilter] = useState<'TODOS' | 'ATENCAO' | 'EM_DIA' | 'SEM_DATA'>('TODOS');
+  const [feriasSearch, setFeriasSearch] = useState('');
+  const [savingDatesId, setSavingDatesId] = useState<string | null>(null);
   const [alertsShown, setAlertsShown] = useState(false);
   const pontoFileRef = useRef<HTMLInputElement>(null);
   const feriasFileRef = useRef<HTMLInputElement>(null);
@@ -186,10 +202,12 @@ export default function PontoFerias() {
       supabase.from('daily_attendance').select('*').gte('date', period.start).lte('date', period.end).order('date', { ascending: false }),
       supabase.from('vacation_control').select('*'),
       supabase.from('overtime_control').select('*').gte('period_start', period.start).lte('period_end', period.end),
-      supabase.from('funcionarios').select('id, nome, turno, letra, cargo, departamento, foto_url').order('nome'),
+      supabase.from('funcionarios').select('id, nome, turno, letra, cargo, departamento, contrato_vinculado, status_colaborador, data_admissao, ultima_ferias, foto_url').order('nome'),
       supabase.from('employee_warnings').select('*').order('date', { ascending: false }),
     ]);
-    const rawFuncs = (fRes.data || []) as Func[];
+    const rawFuncs = ((fRes.data || []) as Func[]).filter(
+      (f) => (f.status_colaborador || 'ATIVO').toUpperCase() !== 'DESLIGADO'
+    );
     const activeDept = (isDepartmentLocked && userDepartment) ? userDepartment : deptFilter;
     const funcs = activeDept === 'todos' ? rawFuncs : rawFuncs.filter(f => f.departamento === activeDept);
     setFuncionarios(funcs);
@@ -274,6 +292,25 @@ export default function PontoFerias() {
     fetchAll();
   }
 
+  async function handleUpdateEmpDates(empId: string, field: 'data_admissao' | 'ultima_ferias', value: string) {
+    if (!canEdit('ausencias') && !canEdit('colaboradores')) {
+      toast.error('Você não tem permissão para alterar datas de férias/admissão.');
+      return;
+    }
+    setSavingDatesId(empId);
+    const { error } = await supabase
+      .from('funcionarios')
+      .update({ [field]: value || null })
+      .eq('id', empId);
+    setSavingDatesId(null);
+    if (error) {
+      toast.error('Erro ao salvar data: ' + error.message);
+      return;
+    }
+    setFuncionarios((prev) => prev.map((f) => (f.id === empId ? { ...f, [field]: value || null } : f)));
+    toast.success(field === 'data_admissao' ? 'Data de admissão atualizada!' : 'Última data de férias atualizada!');
+  }
+
   async function handleCreateVacation() {
     if (!vacForm.employee_id) { toast.error('Selecione o funcionário'); return; }
     const { error } = await supabase.from('vacation_control').upsert({
@@ -288,6 +325,10 @@ export default function PontoFerias() {
       updated_at: new Date().toISOString(),
     }, { onConflict: 'employee_id' });
     if (error) { toast.error('Erro ao registrar férias'); return; }
+    const todayIso = new Date().toISOString().slice(0, 10);
+    if (vacForm.end_date && vacForm.end_date <= todayIso) {
+      await supabase.from('funcionarios').update({ ultima_ferias: vacForm.end_date }).eq('id', vacForm.employee_id);
+    }
     setVacDialogOpen(false);
     setVacForm({ employee_id: '', days_count: '30', scheduled_month: '', start_date: '', end_date: '', observation: '' });
     toast.success('Férias registradas!');
@@ -313,6 +354,10 @@ export default function PontoFerias() {
       updated_at: new Date().toISOString(),
     }).eq('id', editVacForm.id);
     if (error) { toast.error('Erro ao atualizar férias'); return; }
+    const todayIso = new Date().toISOString().slice(0, 10);
+    if (editVacForm.end_date && editVacForm.end_date <= todayIso && editVacForm.employee_id) {
+      await supabase.from('funcionarios').update({ ultima_ferias: editVacForm.end_date }).eq('id', editVacForm.employee_id);
+    }
     setEditVacDialogOpen(false);
     toast.success('Férias atualizadas!');
     fetchAll();
@@ -1509,6 +1554,232 @@ export default function PontoFerias() {
             )}
           </div>
         )}
+      </motion.div>
+
+      {/* ═══ GESTÃO DE FÉRIAS BASEADA NO CADASTRO DE COLABORADORES ═══ */}
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.29 }}
+        className="corporate-section space-y-4">
+        {(() => {
+          const rows = funcionarios.map((f) => {
+            const vac = vacations.find((v) => v.employee_id === f.id);
+            const todayIso = new Date().toISOString().slice(0, 10);
+            const effectiveUltima =
+              f.ultima_ferias ||
+              (vac?.end_date && vac.end_date <= todayIso ? vac.end_date : null);
+            const sit = calcularSituacaoFerias(f.data_admissao, effectiveUltima);
+            return { func: f, vac, effectiveUltima, sit };
+          });
+          const vencidasCount = rows.filter((r) => r.sit.situacao === 'VENCIDA').length;
+          const vencendoCount = rows.filter((r) => r.sit.situacao === 'VENCENDO').length;
+          const emDiaCount = rows.filter((r) => r.sit.situacao === 'EM_DIA').length;
+          const semDataCount = rows.filter((r) => r.sit.situacao === 'SEM_DATA').length;
+
+          const q = feriasSearch.trim().toLowerCase();
+          const filteredRows = rows
+            .filter((r) => {
+              if (feriasFilter === 'ATENCAO' && r.sit.situacao !== 'VENCIDA' && r.sit.situacao !== 'VENCENDO') return false;
+              if (feriasFilter === 'EM_DIA' && r.sit.situacao !== 'EM_DIA') return false;
+              if (feriasFilter === 'SEM_DATA' && r.sit.situacao !== 'SEM_DATA') return false;
+              if (q) {
+                return (
+                  r.func.nome.toLowerCase().includes(q) ||
+                  r.func.cargo.toLowerCase().includes(q) ||
+                  (r.func.departamento || '').toLowerCase().includes(q)
+                );
+              }
+              return true;
+            })
+            .sort((a, b) => {
+              const prio = { VENCIDA: 0, VENCENDO: 1, EM_DIA: 2, SEM_DATA: 3 };
+              if (prio[a.sit.situacao] !== prio[b.sit.situacao]) {
+                return prio[a.sit.situacao] - prio[b.sit.situacao];
+              }
+              return a.func.nome.localeCompare(b.func.nome);
+            });
+
+          return (
+            <>
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                    <Sun className="w-4 h-4 text-amber-500" />
+                    Gestão de Férias por Colaborador — Base: Admissão & Última Férias ({rows.length})
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Preencha ou atualize a <strong>Data de Admissão</strong> e a <strong>Última Data de Férias</strong> diretamente abaixo para acompanhar vencimentos (ciclo de 12 meses) e programar férias.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => setFeriasFilter(feriasFilter === 'ATENCAO' ? 'TODOS' : 'ATENCAO')}
+                    className={`px-2.5 py-1 rounded-full border transition-colors ${feriasFilter === 'ATENCAO' ? 'bg-destructive text-destructive-foreground border-destructive' : 'bg-destructive/10 text-destructive border-destructive/20'}`}
+                  >
+                    🔴 {vencidasCount} Vencida(s) • 🟡 {vencendoCount} ≤ 60d
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFeriasFilter(feriasFilter === 'EM_DIA' ? 'TODOS' : 'EM_DIA')}
+                    className={`px-2.5 py-1 rounded-full border transition-colors ${feriasFilter === 'EM_DIA' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-emerald-500/10 text-emerald-700 border-emerald-500/20'}`}
+                  >
+                    🟢 {emDiaCount} Em dia
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFeriasFilter(feriasFilter === 'SEM_DATA' ? 'TODOS' : 'SEM_DATA')}
+                    className={`px-2.5 py-1 rounded-full border transition-colors ${feriasFilter === 'SEM_DATA' ? 'bg-muted-foreground text-white border-muted-foreground' : 'bg-muted text-muted-foreground border-border'}`}
+                  >
+                    ⚪ {semDataCount} Sem data
+                  </button>
+                  {feriasFilter !== 'TODOS' && (
+                    <button
+                      type="button"
+                      onClick={() => setFeriasFilter('TODOS')}
+                      className="px-2.5 py-1 rounded-full border border-border bg-background hover:bg-muted"
+                    >
+                      Mostrar Todos
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 max-w-sm">
+                <Search className="w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="Filtrar colaborador na gestão de férias..."
+                  value={feriasSearch}
+                  onChange={(e) => setFeriasSearch(e.target.value)}
+                  className="h-9 text-xs"
+                />
+              </div>
+
+              <div className="overflow-x-auto max-h-[460px] overflow-y-auto border border-border/60 rounded-xl">
+                <table className="w-full text-xs">
+                  <thead className="sticky top-0 bg-muted/95 backdrop-blur-sm z-10 border-b border-border">
+                    <tr>
+                      <th className="text-left px-3 py-2.5 font-bold uppercase tracking-wider text-muted-foreground">Colaborador</th>
+                      <th className="text-left px-3 py-2.5 font-bold uppercase tracking-wider text-muted-foreground">Contrato / Turno</th>
+                      <th className="text-left px-3 py-2.5 font-bold uppercase tracking-wider text-muted-foreground">Data Admissão</th>
+                      <th className="text-left px-3 py-2.5 font-bold uppercase tracking-wider text-muted-foreground">Última Data Férias</th>
+                      <th className="text-left px-3 py-2.5 font-bold uppercase tracking-wider text-muted-foreground">Próx. Vencimento</th>
+                      <th className="text-left px-3 py-2.5 font-bold uppercase tracking-wider text-muted-foreground">Férias Programada</th>
+                      <th className="text-right px-3 py-2.5 font-bold uppercase tracking-wider text-muted-foreground">Ação</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/50">
+                    {filteredRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="text-center py-8 text-muted-foreground">
+                          Nenhum colaborador encontrado para este filtro.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredRows.map(({ func: f, vac, sit }) => {
+                        const isBusy = savingDatesId === f.id;
+                        return (
+                          <tr key={f.id} className="hover:bg-muted/20">
+                            <td className="px-3 py-2">
+                              <div className="font-semibold text-foreground">{f.nome}</div>
+                              <div className="text-[11px] text-muted-foreground">{f.cargo}</div>
+                            </td>
+                            <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
+                              <div>{f.departamento}</div>
+                              <div className="text-[10px]">{f.turno || '—'} {f.letra ? `• Letra ${f.letra}` : ''}</div>
+                            </td>
+                            <td className="px-3 py-2">
+                              <Input
+                                type="date"
+                                value={f.data_admissao || ''}
+                                disabled={isBusy}
+                                onChange={(e) => handleUpdateEmpDates(f.id, 'data_admissao', e.target.value)}
+                                className="h-8 text-xs w-[138px]"
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <Input
+                                type="date"
+                                value={f.ultima_ferias || ''}
+                                disabled={isBusy}
+                                onChange={(e) => handleUpdateEmpDates(f.id, 'ultima_ferias', e.target.value)}
+                                className="h-8 text-xs w-[138px]"
+                              />
+                            </td>
+                            <td className="px-3 py-2 whitespace-nowrap">
+                              {sit.situacao === 'VENCIDA' ? (
+                                <div>
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-destructive/15 text-destructive">
+                                    🔴 VENCIDA ({Math.abs(sit.diasParaVencer || 0)}d)
+                                  </span>
+                                  <div className="text-[10px] text-muted-foreground mt-0.5">{formatDate(sit.proximoVencimento)}</div>
+                                </div>
+                              ) : sit.situacao === 'VENCENDO' ? (
+                                <div>
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-500/15 text-amber-700">
+                                    🟡 Vence em {sit.diasParaVencer}d
+                                  </span>
+                                  <div className="text-[10px] text-muted-foreground mt-0.5">{formatDate(sit.proximoVencimento)}</div>
+                                </div>
+                              ) : sit.situacao === 'EM_DIA' ? (
+                                <div>
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-500/15 text-emerald-700">
+                                    🟢 Em dia ({sit.diasParaVencer}d)
+                                  </span>
+                                  <div className="text-[10px] text-muted-foreground mt-0.5">{formatDate(sit.proximoVencimento)}</div>
+                                </div>
+                              ) : (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                                  ⚪ Informar admissão/férias
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 whitespace-nowrap text-[11px]">
+                              {vac ? (
+                                <div>
+                                  <div className="font-semibold text-foreground">
+                                    {vac.start_date ? `${formatDate(vac.start_date)} → ${formatDate(vac.end_date)}` : vac.scheduled_month || 'Programada'}
+                                  </div>
+                                  <div className="text-muted-foreground">{vac.days_count} dias</div>
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground">Não programada</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-right whitespace-nowrap">
+                              {vac ? (
+                                <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={() => openEditVacation(vac)}>
+                                  <Pencil className="w-3 h-3 mr-1" /> Editar
+                                </Button>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-[11px]"
+                                  onClick={() => {
+                                    setVacForm({
+                                      employee_id: f.id,
+                                      days_count: '30',
+                                      scheduled_month: '',
+                                      start_date: '',
+                                      end_date: '',
+                                      observation: '',
+                                    });
+                                    setVacDialogOpen(true);
+                                  }}
+                                >
+                                  <Plus className="w-3 h-3 mr-1" /> Programar
+                                </Button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          );
+        })()}
       </motion.div>
 
       {/* ═══ VACATION OVERVIEW ═══ */}

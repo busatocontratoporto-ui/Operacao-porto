@@ -726,8 +726,10 @@ export type Database = {
       funcionarios: {
         Row: {
           cargo: string
+          contrato_vinculado: string | null
+          cpf: string | null
           created_at: string
-          data_admissao: string
+          data_admissao: string | null
           departamento: string
           email: string | null
           encarregado_id: string | null
@@ -735,21 +737,28 @@ export type Database = {
           feedbacks_recebidos: number
           feedbacks_resolvidos: number
           foto_url: string | null
+          frente_atendimento: string | null
           graduacao: string
           id: string
           letra: string
           nome: string
+          polivalencia: string | null
           pos_graduacao: boolean
           pos_graduacao_tipo: string
+          status_colaborador: string
+          telefone: string | null
           turno: string
+          ultima_ferias: string | null
           nine_box_desempenho: string | null
           nine_box_potencial: string | null
           fit_cultural: number | null
         }
         Insert: {
           cargo: string
+          contrato_vinculado?: string | null
+          cpf?: string | null
           created_at?: string
-          data_admissao?: string
+          data_admissao?: string | null
           departamento: string
           email?: string | null
           encarregado_id?: string | null
@@ -757,21 +766,28 @@ export type Database = {
           feedbacks_recebidos?: number
           feedbacks_resolvidos?: number
           foto_url?: string | null
+          frente_atendimento?: string | null
           graduacao?: string
           id?: string
           letra?: string
           nome: string
+          polivalencia?: string | null
           pos_graduacao?: boolean
           pos_graduacao_tipo?: string
+          status_colaborador?: string
+          telefone?: string | null
           turno?: string
+          ultima_ferias?: string | null
           nine_box_desempenho?: string | null
           nine_box_potencial?: string | null
           fit_cultural?: number | null
         }
         Update: {
           cargo?: string
+          contrato_vinculado?: string | null
+          cpf?: string | null
           created_at?: string
-          data_admissao?: string
+          data_admissao?: string | null
           departamento?: string
           email?: string | null
           encarregado_id?: string | null
@@ -779,13 +795,18 @@ export type Database = {
           feedbacks_recebidos?: number
           feedbacks_resolvidos?: number
           foto_url?: string | null
+          frente_atendimento?: string | null
           graduacao?: string
           id?: string
           letra?: string
           nome?: string
+          polivalencia?: string | null
           pos_graduacao?: boolean
           pos_graduacao_tipo?: string
+          status_colaborador?: string
+          telefone?: string | null
           turno?: string
+          ultima_ferias?: string | null
           nine_box_desempenho?: string | null
           nine_box_potencial?: string | null
           fit_cultural?: number | null

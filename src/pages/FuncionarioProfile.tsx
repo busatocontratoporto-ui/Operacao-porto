@@ -31,7 +31,10 @@ import PDIProfileTab from '@/components/profile/PDIProfileTab';
 
 interface Funcionario {
   id: string; nome: string; cargo: string; departamento: string; foto_url: string;
-  feedbacks_recebidos: number; feedbacks_resolvidos: number; email: string; data_admissao: string;
+  feedbacks_recebidos: number; feedbacks_resolvidos: number; email: string;
+  data_admissao: string | null; ultima_ferias?: string | null;
+  cpf?: string | null; telefone?: string | null;
+  frente_atendimento?: string | null; polivalencia?: string | null; status_colaborador?: string | null;
   escolaridade: string; graduacao: string; pos_graduacao: boolean; pos_graduacao_tipo: string;
   turno: string; letra: string; encarregado_id: string | null;
   nine_box_desempenho: string | null; nine_box_potencial: string | null; fit_cultural: number | null;
@@ -814,7 +817,9 @@ function getTempoEmpresa(dataAdmissao: string | null | undefined): string {
             
             <div className="flex flex-wrap gap-2 pt-1">
               {func.email && <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md bg-muted text-muted-foreground"><MessageSquare className="w-3.5 h-3.5" />{func.email}</span>}
-              <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md bg-muted text-muted-foreground"><Calendar className="w-3.5 h-3.5" />Admissão: {new Date(func.data_admissao).toLocaleDateString('pt-BR')}</span>
+              {func.telefone && <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md bg-muted text-muted-foreground">{func.telefone}</span>}
+              <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md bg-muted text-muted-foreground"><Calendar className="w-3.5 h-3.5" />Admissão: {func.data_admissao ? new Date(func.data_admissao + 'T00:00:00').toLocaleDateString('pt-BR') : 'Não informada'}</span>
+              {func.ultima_ferias && <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md bg-teal-500/10 text-teal-600"><Calendar className="w-3.5 h-3.5" />Última Férias: {new Date(func.ultima_ferias + 'T00:00:00').toLocaleDateString('pt-BR')}</span>}
               {func.escolaridade && <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md bg-muted text-muted-foreground"><GraduationCap className="w-3.5 h-3.5" />{func.escolaridade}</span>}
               {turnoDisplay && <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md bg-chart-3/10 text-chart-3"><Briefcase className="w-3.5 h-3.5" />{turnoDisplay}</span>}
             </div>
@@ -901,8 +906,8 @@ function getTempoEmpresa(dataAdmissao: string | null | undefined): string {
                 <div>
                   <span className="text-xs text-muted-foreground block font-medium">Data de Admissão</span>
                   <span className="font-bold text-foreground leading-tight">
-                    {new Date(func.data_admissao + 'T00:00:00').toLocaleDateString('pt-BR')}
-                    {(() => {
+                    {func.data_admissao ? new Date(func.data_admissao + 'T00:00:00').toLocaleDateString('pt-BR') : 'Não informada'}
+                    {func.data_admissao && (() => {
                       const adm = new Date(func.data_admissao + 'T00:00:00');
                       if (isNaN(adm.getTime())) return null;
                       const now = new Date();
@@ -913,6 +918,16 @@ function getTempoEmpresa(dataAdmissao: string | null | undefined): string {
                       return <span className="text-xs font-normal text-muted-foreground block">({str} na empresa)</span>;
                     })()}
                   </span>
+                </div>
+                <div>
+                  <span className="text-xs text-muted-foreground block font-medium">Última Data de Férias</span>
+                  <span className="font-bold text-foreground leading-tight">
+                    {func.ultima_ferias ? new Date(func.ultima_ferias + 'T00:00:00').toLocaleDateString('pt-BR') : 'Não informada'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-xs text-muted-foreground block font-medium">Telefone / Atendimento</span>
+                  <span className="font-semibold text-foreground block">{func.telefone || '—'} {func.frente_atendimento ? `• ${func.frente_atendimento}` : ''}</span>
                 </div>
                 <div>
                   <span className="text-xs text-muted-foreground block font-medium">E-mail</span>
