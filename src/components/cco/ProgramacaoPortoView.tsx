@@ -814,25 +814,6 @@ export function ProgramacaoPortoView() {
     }
   };
 
-  // Carregar diretamente o arquivo ProgramacaoSemanal_23-11-2026_29-11-2026.xls em 1 clique
-  const handleLoadProgramacaoSemanal = async (fileKey: "23-11" | "09-11") => {
-    setLoadingProg(true);
-    try {
-      const fileName =
-        fileKey === "23-11"
-          ? "ProgramacaoSemanal_23-11-2026_29-11-2026.xls"
-          : "ProgramacaoSemanal_09-11-2026_15-11-2026.xls";
-      const res = await fetch(`/data/${fileName}`);
-      if (!res.ok) throw new Error(`Arquivo ${fileName} não encontrado.`);
-      const buf = await res.arrayBuffer();
-      await processWorkbookBuffer(buf, `BUSATO ${fileName}`);
-    } catch (err: any) {
-      showToast("Erro ao carregar programação semanal: " + (err.message || ""), "#e11d48");
-    } finally {
-      setLoadingProg(false);
-    }
-  };
-
   const handleSaveItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editModal) return;
@@ -903,13 +884,6 @@ export function ProgramacaoPortoView() {
               className="hidden"
               onChange={handleExcelUpload}
             />
-            <button
-              className="btn btn-emerald"
-              onClick={() => handleLoadProgramacaoSemanal("23-11")}
-              title="Importar BUSATO ProgramacaoSemanal_23-11-2026_29-11-2026.xls da pasta PROGRAMAÇÃO"
-            >
-              ⚡ Importar Semana 23/11 a 29/11
-            </button>
             <button
               className="btn btn-primary"
               onClick={() => fileInputRef.current?.click()}
@@ -1122,32 +1096,17 @@ export function ProgramacaoPortoView() {
               Base do CCO limpa e pronta para importação da Programação Semanal
             </h3>
             <p style={{ fontSize: 12.5, color: "var(--text-secondary)", maxWidth: 580, margin: "0 auto 16px" }}>
-              Importe o arquivo <strong>BUSATO ProgramacaoSemanal_23-11-2026_29-11-2026.xls</strong> (ou selecione
-              qualquer planilha semanal <code>.xls</code> da pasta <code>PROGRAMAÇÃO</code>). Todas as demandas
-              programadas alimentarão automaticamente o Painel Analítico, Operação Diária, Corretivas, Medição e
-              Cadastros.
+              Selecione a planilha semanal oficial (<code>.xls</code> / <code>.xlsx</code>) no padrão{" "}
+              <strong>ProgramacaoSemanal_DD-MM-YYYY_DD-MM-YYYY.xls</strong>. Todas as demandas programadas
+              alimentarão automaticamente o Painel Analítico, Operação Diária, Corretivas, Medição e Cadastros.
             </p>
             <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-              <button
-                className="btn btn-emerald"
-                style={{ padding: "10px 20px", fontSize: 13 }}
-                onClick={() => handleLoadProgramacaoSemanal("23-11")}
-              >
-                ⚡ Importar ProgramacaoSemanal_23-11-2026_29-11-2026.xls (1 Clique)
-              </button>
-              <button
-                className="btn btn-outline"
-                style={{ padding: "10px 20px", fontSize: 13 }}
-                onClick={() => handleLoadProgramacaoSemanal("09-11")}
-              >
-                📅 Importar ProgramacaoSemanal_09-11-2026_15-11-2026.xls
-              </button>
               <button
                 className="btn btn-primary"
                 style={{ padding: "10px 20px", fontSize: 13 }}
                 onClick={() => fileInputRef.current?.click()}
               >
-                📤 Escolher Arquivo ProgramacaoSemanal (.xls) no Computador
+                📤 Importar Planilha Semanal (.xls)
               </button>
             </div>
           </div>

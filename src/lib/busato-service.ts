@@ -416,6 +416,28 @@ let memoryCadastros: CadastrosData | null = null;
 
 const LS_REG_DIFF_KEY = "busato_registros_overrides_v1";
 const LS_CAD_KEY = "busato_cadastros_v1";
+const LS_CCO_CLEARED_KEY = "busato_cco_cleared_v1";
+
+async function isCcoBaseCleared(): Promise<boolean> {
+  try {
+    if (localStorage.getItem(LS_CCO_CLEARED_KEY) === "true") return true;
+  } catch {}
+  try {
+    const db = supabase as any;
+    const { data } = await db
+      .from("busato_cadastros")
+      .select("payload")
+      .eq("id", "default")
+      .maybeSingle();
+    if (data?.payload?._cleared === true) {
+      try {
+        localStorage.setItem(LS_CCO_CLEARED_KEY, "true");
+      } catch {}
+      return true;
+    }
+  } catch {}
+  return false;
+}
 
 async function ensureMemoryStore(): Promise<{
   registros: RegistroOperacional[];
@@ -444,13 +466,16 @@ async function ensureMemoryStore(): Promise<{
         }
       } catch {}
 
-      // 2. Fallback estático + cache local quando ainda não houver dados no Supabase
+      // 2. Fallback estático + cache local quando ainda não houver dados no Supabase (exceto se base foi limpa)
       if (!loadedFromCloud) {
-        const res = await fetch("/data/registros.json");
-        const raw: any[] = res.ok ? await res.json() : [];
-        for (const r of raw) {
-          const calc = recalculateRecordMetrics(r);
-          map.set(calc.id, calc);
+        const cleared = await isCcoBaseCleared();
+        if (!cleared) {
+          const res = await fetch("/data/registros.json");
+          const raw: any[] = res.ok ? await res.json() : [];
+          for (const r of raw) {
+            const calc = recalculateRecordMetrics(r);
+            map.set(calc.id, calc);
+          }
         }
         try {
           const savedStr = localStorage.getItem(LS_REG_DIFF_KEY);
@@ -496,9 +521,18 @@ async function ensureMemoryStore(): Promise<{
       } catch {}
 
       if (!loadedCadCloud) {
+        const cleared = await isCcoBaseCleared();
         const savedCad = localStorage.getItem(LS_CAD_KEY);
         if (savedCad) {
           memoryCadastros = JSON.parse(savedCad);
+        } else if (cleared) {
+          memoryCadastros = {
+            operadores: [],
+            equipamentos: [],
+            locais: [],
+            servicos: [],
+            justificativas: [],
+          };
         } else {
           const res = await fetch("/data/cadastros.json");
           memoryCadastros = res.ok
@@ -529,6 +563,11 @@ function saveOverrideRegistro(updated: RegistroOperacional | RegistroOperacional
     const delSet = new Set<number>(state.deletedIds || []);
 
     const items = Array.isArray(updated) ? updated : [updated];
+    if (items.length > 0) {
+      try {
+        localStorage.removeItem(LS_CCO_CLEARED_KEY);
+      } catch {}
+    }
     for (const it of items) {
       if (it && it.id) {
         upMap.set(it.id, it);
@@ -569,13 +608,21 @@ function saveOverrideRegistro(updated: RegistroOperacional | RegistroOperacional
 }
 
 function saveOverrideCadastros(cad: CadastrosData) {
+  const cleanCad: CadastrosData = {
+    operadores: cad.operadores || [],
+    equipamentos: cad.equipamentos || [],
+    locais: cad.locais || [],
+    servicos: cad.servicos || [],
+    justificativas: cad.justificativas || [],
+  };
   try {
-    localStorage.setItem(LS_CAD_KEY, JSON.stringify(cad));
+    localStorage.removeItem(LS_CCO_CLEARED_KEY);
+    localStorage.setItem(LS_CAD_KEY, JSON.stringify(cleanCad));
   } catch {}
   try {
     const db = supabase as any;
     db.from("busato_cadastros")
-      .upsert({ id: "default", payload: cad, updated_at: new Date().toISOString() })
+      .upsert({ id: "default", payload: cleanCad, updated_at: new Date().toISOString() })
       .then(() => {});
   } catch {}
 }
@@ -2302,12 +2349,15 @@ export async function ensureProgramacaoStore(): Promise<ProgramacaoItem[]> {
         }
       } catch {}
 
-      // 2. Fallback JSON estático + cache local
+      // 2. Fallback JSON estático + cache local (exceto se base foi limpa pelo usuário)
       if (!loadedFromCloud) {
-        const res = await fetch("/data/programacao_porto11.json");
-        const raw: ProgramacaoItem[] = res.ok ? await res.json() : [];
-        for (const p of raw) {
-          map.set(p.id, p);
+        const cleared = await isCcoBaseCleared();
+        if (!cleared) {
+          const res = await fetch("/data/programacao_porto11.json");
+          const raw: ProgramacaoItem[] = res.ok ? await res.json() : [];
+          for (const p of raw) {
+            map.set(p.id, p);
+          }
         }
         try {
           const savedStr = localStorage.getItem(LS_PROG_DIFF_KEY);
@@ -2347,6 +2397,11 @@ function saveOverrideProgramacao(
     const delSet = new Set<number>(state.deletedIds || []);
 
     const items = Array.isArray(updated) ? updated : [updated];
+    if (items.length > 0) {
+      try {
+        localStorage.removeItem(LS_CCO_CLEARED_KEY);
+      } catch {}
+    }
     for (const it of items) {
       if (it && it.id) {
         upMap.set(it.id, it);
@@ -2641,13 +2696,25 @@ export async function apiLimparTodosDadosCCO(): Promise<void> {
     localStorage.removeItem(LS_PROG_DIFF_KEY);
     localStorage.removeItem(LS_REG_DIFF_KEY);
     localStorage.removeItem(LS_CAD_KEY);
+    localStorage.setItem(LS_CCO_CLEARED_KEY, "true");
   } catch {}
   try {
     const db = supabase as any;
     await Promise.all([
       db.from("busato_programacao").delete().gte("id", 0),
       db.from("busato_registros").delete().gte("id", 0),
-      db.from("busato_cadastros").delete().eq("id", "default"),
+      db.from("busato_cadastros").upsert({
+        id: "default",
+        payload: {
+          operadores: [],
+          equipamentos: [],
+          locais: [],
+          servicos: [],
+          justificativas: [],
+          _cleared: true,
+        },
+        updated_at: new Date().toISOString(),
+      }),
     ]);
   } catch {}
 }
