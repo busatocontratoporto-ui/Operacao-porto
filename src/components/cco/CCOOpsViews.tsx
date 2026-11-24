@@ -280,15 +280,20 @@ export function CCOOperationalHeader({
                         alignItems: "center",
                       }}
                     >
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                         <span className="pulse-dot" />
                         <span
                           className="badge-plate"
                           style={{ cursor: "pointer" }}
                           onClick={() => openFichaAtendimento(p.idRegistro)}
                         >
-                          {p.placa}
+                          {p.placaReserva || p.placa}
                         </span>
+                        {p.placaReserva && (
+                          <span className="badge badge-warning" style={{ fontSize: 10.5 }}>
+                            🔄 Substituiu: {p.placa}
+                          </span>
+                        )}
                         <strong style={{ fontSize: 12.5 }}>{p.tipoEquipamento}</strong>
                       </div>
                       <span className="badge badge-danger">
@@ -1279,12 +1284,12 @@ export function CorretivasDiaView() {
                             style={{ cursor: "pointer" }}
                             onClick={() => openFichaAtendimento(c.idRegistro)}
                           >
-                            {c.placa}
+                            {c.placaReserva || c.placa}
                           </span>
                           {c.placaReserva && (
                             <div style={{ marginTop: 3 }}>
                               <span className="badge badge-warning">
-                                🔄 Reserva: {c.placaReserva}
+                                🔄 Substituiu: {c.placa}
                               </span>
                             </div>
                           )}
@@ -1429,7 +1434,7 @@ export function CorretivasDiaView() {
                     >
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <span className="badge-plate" style={{ fontSize: 13 }}>
-                          {c.placa}
+                          {c.placaReserva || c.placa}
                         </span>
                         {isBase ? (
                           <span
@@ -1463,7 +1468,7 @@ export function CorretivasDiaView() {
                       {c.placaReserva && (
                         <div style={{ marginTop: 4 }}>
                           <span className="badge badge-warning" style={{ fontWeight: 700 }}>
-                            🔄 Substituto / Reserva: {c.placaReserva}
+                            🔄 Substituiu placa: {c.placa}
                           </span>
                         </div>
                       )}
@@ -2030,11 +2035,11 @@ export function OperacaoDiariaView() {
                         </div>
                       </td>
                       <td>
-                        <span className="badge-plate">{r.placaPrincipal}</span>
+                        <span className="badge-plate">{r.placaReserva || r.placaPrincipal}</span>
                         {r.placaReserva && (
                           <div style={{ marginTop: 3 }}>
                             <span className="badge badge-warning">
-                              🔄 Reserva: {r.placaReserva}
+                              🔄 Substituiu: {r.placaPrincipal}
                             </span>
                           </div>
                         )}
@@ -2835,12 +2840,12 @@ export function AuditoriaExportacaoView() {
                             style={{ cursor: "pointer" }}
                             onClick={() => openFichaAtendimento(c.idRegistro)}
                           >
-                            {c.placa}
+                            {c.placaReserva || c.placa}
                           </span>
                           {c.placaReserva && (
                             <div style={{ marginTop: 3 }}>
                               <span className="badge badge-warning">
-                                🔄 Reserva: {c.placaReserva}
+                                🔄 Substituiu: {c.placa}
                               </span>
                             </div>
                           )}
