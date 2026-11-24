@@ -16,7 +16,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -49,7 +48,6 @@ const STATUS_COLABORADOR_OPTIONS = [
 ];
 
 const departamentos = DEPARTAMENTOS;
-const escolaridades = ['Ensino Fundamental', 'Ensino Médio', 'Ensino Superior Cursando', 'Ensino Superior Completo', 'Pós-Graduação', 'Mestrado', 'Doutorado'];
 const TURNOS = [
   { value: 'dia_a', label: 'Dia A' }, { value: 'dia_b', label: 'Dia B' },
   { value: 'noite_a', label: 'Noite A' }, { value: 'noite_b', label: 'Noite B' },
@@ -309,20 +307,21 @@ export default function Colaboradores() {
 
   async function handleCreate() {
     if (!canCreate('colaboradores')) { toast.error('Você não tem permissão para cadastrar colaboradores.'); return; }
-    if (!newData.nome || !newData.cargo || !newData.departamento) { toast.error('Preencha campos obrigatórios (*)'); return; }
+    if (!newData.nome || !newData.cargo) { toast.error('Preencha Nome Completo e Cargo / Função (*)'); return; }
     setUploading(true);
     let foto_url = '';
     try { if (newPhotoFile) foto_url = await uploadPhoto(newPhotoFile); } catch { toast.error('Erro ao enviar foto'); setUploading(false); return; }
     
     const cleanCpf = normalizeCpf(newData.cpf);
+    const resolvedDept = newData.departamento || newData.contrato_vinculado || 'Contrato Porto';
     const insertData: Record<string, unknown> = { 
       nome: newData.nome, 
       email: newData.email || null,
       cpf: cleanCpf || null,
       telefone: newData.telefone || null,
       cargo: newData.cargo, 
-      departamento: newData.departamento, 
-      contrato_vinculado: newData.contrato_vinculado || null,
+      departamento: resolvedDept, 
+      contrato_vinculado: newData.contrato_vinculado || resolvedDept,
       frente_atendimento: newData.frente_atendimento || null,
       polivalencia: newData.polivalencia || null,
       status_colaborador: newData.status_colaborador || 'ATIVO',
@@ -390,19 +389,20 @@ export default function Colaboradores() {
 
   async function handleEdit() {
     if (!canEdit('colaboradores')) { toast.error('Você não tem permissão para editar colaboradores.'); return; }
-    if (!editData.nome || !editData.cargo || !editData.departamento) { toast.error('Preencha campos obrigatórios (*)'); return; }
+    if (!editData.nome || !editData.cargo) { toast.error('Preencha Nome Completo e Cargo / Função (*)'); return; }
     setUploading(true);
     let foto_url = editData.foto_url;
     try { if (editPhotoFile) foto_url = await uploadPhoto(editPhotoFile); } catch { toast.error('Erro foto'); setUploading(false); return; }
 
     const cleanCpf = normalizeCpf(editData.cpf);
+    const resolvedDept = editData.departamento || editData.contrato_vinculado || 'Contrato Porto';
     const updateData: Record<string, unknown> = { 
       nome: editData.nome, 
       email: editData.email || null,
       cpf: cleanCpf || null,
       telefone: editData.telefone || null,
       cargo: editData.cargo, 
-      departamento: editData.departamento, 
+      departamento: resolvedDept, 
       contrato_vinculado: editData.contrato_vinculado || null,
       frente_atendimento: editData.frente_atendimento || null,
       polivalencia: editData.polivalencia || null,
@@ -485,8 +485,8 @@ export default function Colaboradores() {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">E-mail Corporativo / Pessoal</Label>
-              <FastInput value={data.email} onValueChange={v => setData({ ...data, email: v })} placeholder="email@empresa.com" type="email" />
+              <Label className="text-xs font-semibold">Cargo / Função *</Label>
+              <FastInput value={data.cargo} onValueChange={v => setData({ ...data, cargo: v })} placeholder="Ex: Encarregado Operacional" />
             </div>
 
             <div className="space-y-1.5">
@@ -499,31 +499,15 @@ export default function Colaboradores() {
               </Select>
             </div>
 
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Cargo / Função *</Label>
-              <FastInput value={data.cargo} onValueChange={v => setData({ ...data, cargo: v })} placeholder="Ex: Encarregado Operacional" />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Departamento Principal *</Label>
-              <Select value={data.departamento} onValueChange={v => setData({ ...data, departamento: v })}>
-                <SelectTrigger><SelectValue placeholder="Selecione o setor" /></SelectTrigger>
-                <SelectContent>{departamentos.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-
             <div className="space-y-1.5 sm:col-span-2 bg-muted/30 p-3 rounded-xl border border-border/60">
               <Label className="text-xs font-semibold">Contrato / Vinculação Responsável (Opcional)</Label>
-              <Select value={data.contrato_vinculado || 'none'} onValueChange={v => setData({ ...data, contrato_vinculado: v === 'none' ? '' : v })}>
-                <SelectTrigger><SelectValue placeholder="Selecione caso responda a outro contrato" /></SelectTrigger>
+              <Select value={data.contrato_vinculado || 'none'} onValueChange={v => setData({ ...data, contrato_vinculado: v === 'none' ? '' : v, departamento: v === 'none' ? (data.departamento || 'Contrato Porto') : v })}>
+                <SelectTrigger><SelectValue placeholder="Selecione o contrato / setor" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">Nenhum (Mesmo do Departamento Principal)</SelectItem>
+                  <SelectItem value="none">Padrão (Contrato Porto)</SelectItem>
                   {departamentos.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <p className="text-[11px] text-muted-foreground mt-1">
-                Utilize se o colaborador pertence a uma área (ex: Medição), mas está vinculado a outro contrato (ex: Contrato Porto).
-              </p>
             </div>
 
             <div className="space-y-1.5 sm:col-span-2 bg-primary/5 p-3 rounded-xl border border-primary/20">
@@ -572,38 +556,7 @@ export default function Colaboradores() {
           </div>
         </div>
 
-        {/* BLOCO 3: FORMAÇÃO & ESCOLARIDADE */}
-        <div className="space-y-3">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-primary border-b border-border pb-1">
-            3. Formação Acadêmica
-          </h4>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Escolaridade</Label>
-              <Select value={data.escolaridade} onValueChange={v => setData({ ...data, escolaridade: v })}>
-                <SelectTrigger><SelectValue placeholder="Selecione escolaridade" /></SelectTrigger>
-                <SelectContent>{escolaridades.map(e => <SelectItem key={e} value={e}>{e}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Graduação / Curso</Label>
-              <FastInput value={data.graduacao} onValueChange={v => setData({ ...data, graduacao: v })} placeholder="Ex: Engenharia Civil" />
-            </div>
-
-            <div className="space-y-1.5 sm:col-span-2 flex flex-col gap-2 bg-muted/20 p-3 rounded-xl border border-border/60">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs font-semibold">Possui Pós-Graduação / Especialização?</Label>
-                <Switch checked={data.pos_graduacao} onCheckedChange={v => setData({ ...data, pos_graduacao: v, pos_graduacao_tipo: v ? data.pos_graduacao_tipo : '' })} />
-              </div>
-              {data.pos_graduacao && (
-                <FastInput value={data.pos_graduacao_tipo} onValueChange={v => setData({ ...data, pos_graduacao_tipo: v })} placeholder="Nome do curso de pós-graduação" className="mt-1" />
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* BLOCO 4: DOCUMENTOS COMPLEMENTARES */}
+        {/* BLOCO 3: DOCUMENTOS COMPLEMENTARES */}
         {cargoNeedsDocs(data.cargo) && (
           <div className="space-y-2 p-3.5 rounded-xl bg-muted/40 border border-border">
             <Label className="flex items-center gap-2 text-xs font-bold uppercase text-foreground">
