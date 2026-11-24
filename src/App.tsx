@@ -33,6 +33,7 @@ import CCO from "./pages/CCO";
 import { InstallPWA } from './components/InstallPWA';
 import { PWAUpdateHandler } from './components/PWAUpdateHandler';
 import { PageGuard } from "./components/auth/PageGuard";
+import { usePermissions } from "./hooks/usePermissions";
 
 class ErrorBoundary extends React.Component<React.PropsWithChildren, { hasError: boolean; errorId: string; errorMessage: string; errorStack: string }> {
   constructor(props: React.PropsWithChildren) {
@@ -87,17 +88,18 @@ const queryClient = new QueryClient({
   },
 });
 
-// Protege rotas que exigem perfil de administrador
+// Protege rotas que exigem perfil de administrador ou permissão explícita no módulo Admin
 function AdminGuard({ children }: { children: React.ReactNode }) {
   const { isAdmin, loading } = useAuth();
+  const { canView } = usePermissions();
   if (loading) return null;
-  if (!isAdmin) return <Navigate to="/" replace />;
+  if (!isAdmin && !canView('admin')) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
 
 function ProtectedRoutes() {
   const { user, loading } = useAuth();
-  
+
   useOfflineSync();
 
   if (loading) {
@@ -135,7 +137,8 @@ function ProtectedRoutes() {
           <Route path="/notificacoes" element={<PageGuard pageKey="notificacoes"><GestaoNotificacoes /></PageGuard>} />
           <Route path="/treinamentos" element={<PageGuard pageKey="treinamentos"><Treinamentos /></PageGuard>} />
           <Route path="/assessments" element={<PageGuard pageKey="treinamentos"><AssessmentHub /></PageGuard>} />
-          <Route path="/cco" element={<CCO />} />
+          <Route path="/cco" element={<PageGuard pageKey="cco"><CCO /></PageGuard>} />
+          <Route path="/cco/:tab" element={<PageGuard pageKey="cco"><CCO /></PageGuard>} />
           {/* Legacy compat */}
           <Route path="/disc" element={<PageGuard pageKey="disc"><DiscTest /></PageGuard>} />
           <Route path="/disc/:id" element={<PageGuard pageKey="disc"><DiscTest /></PageGuard>} />

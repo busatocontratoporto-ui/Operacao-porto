@@ -26,3 +26,12 @@ dist-ssr
  
 # Supabase temp
 supabase/.temp/
+
+# Local spreadsheets, scratch & temporary Vite/debug files
+PORTO11.xlsx
+scratch/
+apply_migrations.cjs
+check_project.cjs
+check_rls.cjs
+check_vercel.cjs
+vite.config.ts.timestamp-*.mjs

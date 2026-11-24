@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, BarChart3, Settings, ChevronLeft, ChevronRight,
-  Users, Target, Shield, LogOut, Calendar, AlertTriangle, CalendarDays,
-  Briefcase, Brain, ClipboardList, GitMerge, TrendingUp, FileText, FileWarning, MessageSquare, BrainCircuit, Activity, Radio
+  LayoutDashboard, Settings,
+  Users, Shield, LogOut, AlertTriangle, CalendarDays,
+  Briefcase, ClipboardList, GitMerge, FileWarning, BrainCircuit, Activity,
+  Clock, Truck, Wrench, PanelLeftClose, PanelLeftOpen, FileSpreadsheet
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePermissions } from '@/hooks/usePermissions';
 import { cn } from '@/lib/utils';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 const busatoGlobo = '/logo.png';
@@ -45,9 +47,20 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
+    label: 'CCO',
+    items: [
+      { to: '/cco', icon: LayoutDashboard, label: 'Painel Analítico & Paradas', key: 'cco_painel' },
+      { to: '/cco/programacao', icon: FileSpreadsheet, label: 'Programação', key: 'cco_programacao' },
+      { to: '/cco/operacao', icon: Clock, label: 'Operação Diária ao Vivo', key: 'cco_operacao' },
+      { to: '/cco/corretivas', icon: AlertTriangle, label: 'Corretivas do Dia (Ao Vivo)', key: 'cco_corretivas' },
+      { to: '/cco/medicao', icon: Truck, label: 'Boletim de Medição por Placa', key: 'cco_medicao' },
+      { to: '/cco/relatorios', icon: Wrench, label: 'Histórico & Exportação', key: 'cco_relatorios' },
+      { to: '/cco/cadastros', icon: Settings, label: 'Gestão de Cadastros', key: 'cco_cadastros' },
+    ],
+  },
+  {
     label: 'Operações',
     items: [
-      { to: '/cco', icon: Radio, label: 'CCO', key: 'cco' },
       { to: '/eventos', icon: AlertTriangle, label: 'SSMA', key: 'eventos' },
       { to: '/evolucao', icon: Briefcase, label: 'Contratos', key: 'evolucao' },
       { to: '/notificacoes', icon: FileWarning, label: 'Notificações/Multas', key: 'notificacoes' },
@@ -57,6 +70,7 @@ const navGroups: NavGroup[] = [
     label: 'Sistema',
     items: [
       { to: '/configuracoes', icon: Settings, label: 'Configurações', key: 'configuracoes' },
+      { to: '/admin', icon: Shield, label: 'Administração', key: 'admin' },
     ],
   },
 ];
@@ -64,37 +78,18 @@ const navGroups: NavGroup[] = [
 export default function AppSidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
-  const { isAdmin, isDepartmentLocked, permissions, signOut } = useAuth();
+  const { isAdmin, signOut } = useAuth();
+  const { canView } = usePermissions();
 
-  let baseGroups = isAdmin
-    ? [
-        ...navGroups.slice(0, -1),
-        {
-          label: 'Sistema',
-          items: [
-            { to: '/configuracoes', icon: Settings, label: 'Configurações', key: 'configuracoes' },
-            { to: '/admin', icon: Shield, label: 'Administração', key: 'admin' },
-          ],
-        },
-      ]
-    : navGroups;
-
-  if (isDepartmentLocked) {
-    // Para contas de departamento, remove o módulo Operações e Visão Geral
-    baseGroups = baseGroups.filter(g => g.label !== 'Operações' && g.label !== 'Visão Geral');
-  }
-
-  const allGroups = baseGroups.map(group => ({
-    ...group,
-    items: group.items.filter(item => {
-      if (isAdmin) return true;
-      if (isDepartmentLocked) {
-        const allowedKeys = ['colaboradores', 'organograma', 'ausencias', 'desempenho', 'treinamentos', 'configuracoes'];
-        return allowedKeys.includes(item.key);
-      }
-      return permissions[item.key]?.can_view === true;
-    })
-  })).filter(group => group.items.length > 0);
+  const allGroups = navGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => {
+        if (isAdmin) return true;
+        return canView(item.key);
+      }),
+    }))
+    .filter((group) => group.items.length > 0);
 
   return (
     <motion.aside
@@ -102,10 +97,10 @@ export default function AppSidebar() {
       transition={{ duration: 0.18, ease: 'easeInOut' }}
       className="hidden md:flex flex-col h-screen sticky top-0 z-30 bg-sidebar border-r border-sidebar-border"
     >
-      {/* ── Brand ── */}
-      <div className="flex items-center px-4 h-20 border-b border-sidebar-border/50 flex-shrink-0 relative overflow-hidden">
+      {/* ── Brand & Collapse Toggle ── */}
+      <div className="flex items-center justify-between px-3 h-20 border-b border-sidebar-border/50 flex-shrink-0 relative overflow-hidden">
         {/* Efeito luminoso de fundo sutil */}
-        <div className="absolute inset-0 bg-gradient-to-r from-primary/5 via-transparent to-transparent opacity-50" />
+        <div className="absolute inset-0 bg-gradient-to-r from-primary/5 via-transparent to-transparent opacity-50 pointer-events-none" />
         
         <AnimatePresence mode="wait">
           {!collapsed ? (
@@ -115,9 +110,16 @@ export default function AppSidebar() {
               animate={{ opacity: 1, x: 0 }} 
               exit={{ opacity: 0, x: -10 }} 
               transition={{ duration: 0.2 }}
-              className="w-full flex items-center px-4"
+              className="flex items-center justify-between w-full px-2 gap-2 relative z-10"
             >
-              <img src={busatoLogoFull} alt="Busato Group" className="h-8 w-auto object-contain drop-shadow-sm" />
+              <img src={busatoLogoFull} alt="Busato Group" className="h-7 w-auto object-contain drop-shadow-sm" />
+              <button
+                onClick={() => setCollapsed(true)}
+                title="Recolher menu lateral"
+                className="flex items-center justify-center w-8 h-8 rounded-lg border border-sidebar-border/60 bg-sidebar-accent/40 text-sidebar-foreground/70 hover:text-sidebar-primary hover:bg-sidebar-primary/10 hover:border-sidebar-primary/30 transition-all shadow-sm flex-shrink-0"
+              >
+                <PanelLeftClose className="w-4 h-4" />
+              </button>
             </motion.div>
           ) : (
             <motion.div 
@@ -126,9 +128,16 @@ export default function AppSidebar() {
               animate={{ opacity: 1, scale: 1 }} 
               exit={{ opacity: 0, scale: 0.8 }} 
               transition={{ duration: 0.2 }}
-              className="w-full flex justify-center"
+              className="w-full flex flex-col items-center justify-center gap-1 relative z-10"
             >
-              <img src={busatoGlobo} alt="Busato" className="w-8 h-8 object-contain drop-shadow-sm" />
+              <button
+                onClick={() => setCollapsed(false)}
+                title="Expandir menu lateral"
+                className="group flex flex-col items-center justify-center w-10 h-12 rounded-xl hover:bg-sidebar-primary/10 transition-all"
+              >
+                <img src={busatoGlobo} alt="Busato" className="w-6 h-6 object-contain drop-shadow-sm group-hover:hidden" />
+                <PanelLeftOpen className="w-5 h-5 text-sidebar-primary hidden group-hover:block" />
+              </button>
             </motion.div>
           )}
         </AnimatePresence>
@@ -142,7 +151,10 @@ export default function AppSidebar() {
               {gi > 0 && <div className="mx-3 my-1.5 border-t border-sidebar-border/30" />}
               <div className="space-y-0.5">
                 {group.items.map((item) => {
-                  const isActive = item.to === '/' ? location.pathname === '/' : location.pathname.startsWith(item.to);
+                  const isActive =
+                    item.to === '/' || item.to === '/cco'
+                      ? location.pathname === item.to
+                      : location.pathname.startsWith(item.to);
                   return (
                     <NavLink
                       key={item.to}
@@ -171,7 +183,10 @@ export default function AppSidebar() {
                 </AccordionTrigger>
                 <AccordionContent className="pb-1 pt-1 space-y-0.5">
                   {group.items.map((item) => {
-                    const isActive = item.to === '/' ? location.pathname === '/' : location.pathname.startsWith(item.to);
+                    const isActive =
+                      item.to === '/' || item.to === '/cco'
+                        ? location.pathname === item.to
+                        : location.pathname.startsWith(item.to);
                     return (
                       <NavLink
                         key={item.to}
@@ -216,7 +231,11 @@ export default function AppSidebar() {
       <div className="border-t border-sidebar-border flex-shrink-0">
         <button
           onClick={signOut}
-          className="flex items-center gap-3 px-4 py-3 w-full text-[12.5px] text-sidebar-foreground/50 hover:text-destructive transition-colors"
+          className={cn(
+            "flex items-center gap-3 px-4 py-2.5 w-full text-[12.5px] text-sidebar-foreground/60 hover:text-destructive hover:bg-destructive/5 transition-colors",
+            collapsed && "justify-center px-2"
+          )}
+          title={collapsed ? "Sair" : undefined}
         >
           <LogOut className="w-4 h-4 flex-shrink-0" />
           <AnimatePresence>
@@ -230,9 +249,20 @@ export default function AppSidebar() {
         </button>
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="flex items-center justify-center h-8 w-full border-t border-sidebar-border/40 text-sidebar-foreground/30 hover:text-sidebar-primary transition-colors"
+          title={collapsed ? "Expandir menu lateral" : "Recolher menu lateral"}
+          className={cn(
+            "flex items-center gap-2.5 px-4 h-10 w-full border-t border-sidebar-border/60 bg-sidebar-accent/30 text-sidebar-foreground/70 hover:text-sidebar-primary hover:bg-sidebar-primary/10 transition-colors text-[12px] font-semibold",
+            collapsed && "justify-center px-2"
+          )}
         >
-          {collapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
+          {collapsed ? (
+            <PanelLeftOpen className="w-4 h-4 flex-shrink-0" />
+          ) : (
+            <>
+              <PanelLeftClose className="w-4 h-4 flex-shrink-0" />
+              <span className="whitespace-nowrap">Recolher menu</span>
+            </>
+          )}
         </button>
       </div>
     </motion.aside>

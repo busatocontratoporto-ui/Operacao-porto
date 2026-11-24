@@ -12,16 +12,25 @@ const PAGE_ROUTE_MAP: { key: string; path: string }[] = [
   { key: 'ausencias', path: '/ausencias' },
   { key: 'desempenho', path: '/desempenho' },
   { key: 'treinamentos', path: '/treinamentos' },
+  { key: 'cco_painel', path: '/cco' },
+  { key: 'cco_programacao', path: '/cco/programacao' },
+  { key: 'cco_operacao', path: '/cco/operacao' },
+  { key: 'cco_corretivas', path: '/cco/corretivas' },
+  { key: 'cco_medicao', path: '/cco/medicao' },
+  { key: 'cco_relatorios', path: '/cco/relatorios' },
+  { key: 'cco_cadastros', path: '/cco/cadastros' },
   { key: 'eventos', path: '/eventos' },
   { key: 'evolucao', path: '/evolucao' },
   { key: 'notificacoes', path: '/notificacoes' },
   { key: 'configuracoes', path: '/configuracoes' },
+  { key: 'admin', path: '/admin' },
   { key: 'disc', path: '/disc' },
 ];
 
 export function AccessDenied() {
   const navigate = useNavigate();
   const { canView } = usePermissions();
+  const fallbackRoute = PAGE_ROUTE_MAP.find((item) => canView(item.key))?.path || '/configuracoes';
   return (
     <div className="min-h-[70vh] flex flex-col items-center justify-center text-center p-6 space-y-4">
       <div className="p-4 bg-destructive/10 text-destructive rounded-full">
@@ -32,7 +41,7 @@ export function AccessDenied() {
         Seu perfil de acesso não possui permissão para visualizar este módulo ou página.
         Se você acredita que isto é um erro, solicite a liberação de acesso ao Administrador do sistema.
       </p>
-      <Button onClick={() => navigate(canView('dashboard') ? '/' : '/colaboradores')} variant="outline" className="gap-2">
+      <Button onClick={() => navigate(fallbackRoute)} variant="outline" className="gap-2">
         <Home className="w-4 h-4" /> Voltar para o Início
       </Button>
     </div>

@@ -1,8 +1,9 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { Activity, Users, Target, Settings, AlertTriangle, CalendarDays, MoreHorizontal } from 'lucide-react';
+import { Activity, Users, Target, Settings, AlertTriangle, CalendarDays, MoreHorizontal, Radio } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePermissions } from '@/hooks/usePermissions';
 
 const mainItems = [
   { to: '/', icon: Activity, label: 'Movimentações', key: 'dashboard' },
@@ -12,16 +13,18 @@ const mainItems = [
 ];
 
 const moreItems = [
+  { to: '/cco', icon: Radio, label: 'CCO', key: 'cco' },
   { to: '/eventos', icon: AlertTriangle, label: 'Eventos SSMA', key: 'eventos' },
   { to: '/configuracoes', icon: Settings, label: 'Configuras', key: 'configuracoes' },
 ];
 
 export default function MobileNav() {
   const location = useLocation();
-  const { isAdmin, permissions } = useAuth();
+  const { isAdmin } = useAuth();
+  const { canView } = usePermissions();
 
-  const allowedMain = mainItems.filter(i => isAdmin || permissions[i.key]?.can_view === true);
-  const allowedMore = moreItems.filter(i => isAdmin || permissions[i.key]?.can_view === true);
+  const allowedMain = mainItems.filter(i => isAdmin || canView(i.key));
+  const allowedMore = moreItems.filter(i => isAdmin || canView(i.key));
 
   const moreActive = allowedMore.some(i => location.pathname.startsWith(i.to));
 

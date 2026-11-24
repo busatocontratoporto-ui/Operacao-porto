@@ -39,7 +39,8 @@ const ALL_APP_PAGES = [
   'desempenho', 'treinamentos', 'disc', 'mbti', 'bigfive',
   'eventos', 'evolucao', 'notificacoes', 'configuracoes',
   'cadastro', 'feedbacks', 'novo_feedback', 'relatorios',
-  'reunioes', 'cco', 'admin',
+  'reunioes', 'cco', 'cco_painel', 'cco_programacao', 'cco_operacao',
+  'cco_corretivas', 'cco_medicao', 'cco_relatorios', 'cco_cadastros', 'admin',
 ];
 const MASTER_PERMS: Record<string, { can_view: boolean; can_create: boolean; can_edit: boolean; can_delete: boolean }> = {};
 ALL_APP_PAGES.forEach(page => {
@@ -198,7 +199,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const permsMap: Record<string, { can_view: boolean; can_create: boolean; can_edit: boolean; can_delete: boolean }> = {};
 
     if (profileId) {
-      // Sistema moderno: permissões via perfil de acesso
+      // Base: permissões do Perfil de Acesso
       const { data: permsRes } = await supabase.from('access_profile_permissions')
         .select('page, can_view, can_create, can_edit, can_delete')
         .eq('profile_id', profileId);
@@ -213,25 +214,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
     } else if (roles.includes('admin') || isMasterEmail) {
       // Admin sem perfil → acesso total a todas as páginas do sistema
-      const allPages = [
-        'dashboard', 'colaboradores', 'organograma', 'ausencias',
-        'desempenho', 'treinamentos', 'disc', 'mbti', 'bigfive',
-        'eventos', 'evolucao', 'notificacoes', 'configuracoes',
-        'cadastro', 'feedbacks', 'novo_feedback', 'relatorios',
-        'reunioes', 'cco', 'admin',
-      ];
-      allPages.forEach(page => {
+      ALL_APP_PAGES.forEach(page => {
         permsMap[page] = { can_view: true, can_create: true, can_edit: true, can_delete: true };
       });
-    } else {
-      // Sistema legado: permissões individuais via user_permissions
-      // Fallback para usuários sem perfil atribuído
-      const { data: legacyPerms } = await supabase.from('user_permissions')
-        .select('page, can_view, can_create, can_edit, can_delete')
-        .eq('user_id', userId)
-        .neq('page', 'banned'); // 'banned' é sentinela de bloqueio, não permissão real
+    }
 
-      legacyPerms?.forEach((p: { page: string; can_view: boolean; can_create: boolean; can_edit: boolean; can_delete: boolean }) => {
+    // Permissões individuais em user_permissions sobrescrevem/complementam o perfil (quando não-admin)
+    const { data: individualPerms } = await supabase.from('user_permissions')
+      .select('page, can_view, can_create, can_edit, can_delete')
+      .eq('user_id', userId)
+      .neq('page', 'banned');
+
+    if (individualPerms && individualPerms.length > 0 && !(roles.includes('admin') || isMasterEmail)) {
+      individualPerms.forEach((p: { page: string; can_view: boolean; can_create: boolean; can_edit: boolean; can_delete: boolean }) => {
         permsMap[p.page] = {
           can_view: p.can_view,
           can_create: p.can_create,
@@ -241,8 +236,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
     }
 
-    // Se o usuário pertencer a um departamento específico (não-admin)
-    if (dept && !isUserAdmin) {
+    // Fallback para contas de departamento SEM perfil e SEM permissões individuais configuradas
+    const hasConfiguredPerms = Object.keys(permsMap).length > 0;
+    if (dept && !isUserAdmin && !hasConfiguredPerms) {
       const deptPagesAllowed = [
         'colaboradores', 'organograma', 'ausencias',
         'desempenho', 'feedbacks', 'novo_feedback',
