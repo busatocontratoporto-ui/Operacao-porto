@@ -1,19 +1,36 @@
 import { useEffect } from 'react';
 
 /**
- * Trata atualizações do PWA de forma segura.
+ * Trata atualizações do PWA automaticamente sem manter versões antigas em cache.
  */
 export function PWAUpdateHandler() {
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return;
 
-    navigator.serviceWorker.getRegistration().then((reg) => {
-      if (reg && reg.waiting) {
-        reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-      }
-    }).catch(() => {});
+    let refreshing = false;
+    const onControllerChange = () => {
+      if (refreshing) return;
+      refreshing = true;
+      window.location.reload();
+    };
+
+    navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
+
+    navigator.serviceWorker
+      .getRegistration()
+      .then((reg) => {
+        if (!reg) return;
+        if (reg.waiting) {
+          reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+        }
+        reg.update().catch(() => {});
+      })
+      .catch(() => {});
+
+    return () => {
+      navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
+    };
   }, []);
 
   return null;
 }
-

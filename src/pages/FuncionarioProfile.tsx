@@ -934,8 +934,8 @@ function getTempoEmpresa(dataAdmissao: string | null | undefined): string {
                   <span className="font-semibold text-foreground truncate block" title={func.email || '—'}>{func.email || '—'}</span>
                 </div>
                 <div>
-                  <span className="text-xs text-muted-foreground block font-medium">Escolaridade / Turno</span>
-                  <span className="font-semibold text-foreground">{func.escolaridade || '—'} {turnoDisplay ? `• ${turnoDisplay}` : ''}</span>
+                  <span className="text-xs text-muted-foreground block font-medium">Turno / Escala</span>
+                  <span className="font-semibold text-foreground">{turnoDisplay || '—'}</span>
                 </div>
               </div>
             </div>
