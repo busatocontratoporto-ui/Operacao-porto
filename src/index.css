@@ -1051,3 +1051,18 @@
   font-weight: 600;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
+
+/* ============================================================================
+ * ESCALA GLOBAL DESKTOP (90%) PARA MELHOR VISUALIZAÇÃO EM TELA
+ * ============================================================================ */
+@media screen and (min-width: 768px) {
+  html {
+    zoom: 0.9;
+  }
+}
+
+@media print {
+  html {
+    zoom: 1 !important;
+  }
+}
