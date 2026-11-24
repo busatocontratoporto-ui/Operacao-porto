@@ -1281,6 +1281,13 @@ export function CorretivasDiaView() {
                           >
                             {c.placa}
                           </span>
+                          {c.placaReserva && (
+                            <div style={{ marginTop: 3 }}>
+                              <span className="badge badge-warning">
+                                🔄 Reserva: {c.placaReserva}
+                              </span>
+                            </div>
+                          )}
                         </td>
                         <td style={{ fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>
                           {c.tipoEquipamento}
@@ -1453,6 +1460,13 @@ export function CorretivasDiaView() {
                       <h4 style={{ fontSize: 14, fontWeight: 800, color: "var(--text-primary)" }}>
                         {c.tipoEquipamento}
                       </h4>
+                      {c.placaReserva && (
+                        <div style={{ marginTop: 4 }}>
+                          <span className="badge badge-warning" style={{ fontWeight: 700 }}>
+                            🔄 Substituto / Reserva: {c.placaReserva}
+                          </span>
+                        </div>
+                      )}
                       <div
                         style={{
                           fontSize: 11.5,
@@ -2823,6 +2837,13 @@ export function AuditoriaExportacaoView() {
                           >
                             {c.placa}
                           </span>
+                          {c.placaReserva && (
+                            <div style={{ marginTop: 3 }}>
+                              <span className="badge badge-warning">
+                                🔄 Reserva: {c.placaReserva}
+                              </span>
+                            </div>
+                          )}
                         </td>
                         <td>
                           {c.tipoEvento === "ATRASO_INICIO" ? (
