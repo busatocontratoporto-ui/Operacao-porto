@@ -1208,112 +1208,118 @@ export default function Ponto() {
 
       {/* Dialog: Gerenciar Links de Lançamento Externo */}
       <Dialog open={linksDialogOpen} onOpenChange={setLinksDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Link2 className="w-5 h-5 text-primary" /> Links de Lançamento Externo de Ponto
+        <DialogContent className="sm:max-w-xl w-[calc(100%-2rem)] max-h-[88vh] overflow-y-auto overflow-x-hidden p-4 sm:p-5">
+          <DialogHeader className="pr-6">
+            <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
+              <Link2 className="w-4 h-4 text-primary shrink-0" /> Links de Lançamento Externo
             </DialogTitle>
-            <DialogDescription>
-              Quem receber o link poderá lançar faltas, extras e banco de horas e consultar apenas os próprios lançamentos, sem acesso ao restante do sistema.
+            <DialogDescription className="text-xs leading-relaxed">
+              Quem receber o link poderá lançar faltas, extras e banco de horas e consultar apenas os próprios lançamentos, sem acesso ao sistema.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-5 pt-2">
+          <div className="space-y-4 pt-1 min-w-0">
             {/* Criar Novo Link */}
-            <div className="p-4 rounded-xl bg-muted/30 border border-border space-y-3">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-primary">Gerar Novo Link Externo</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
+            <div className="p-3.5 rounded-xl bg-muted/30 border border-border space-y-2.5 min-w-0">
+              <h4 className="text-[11px] font-bold uppercase tracking-wider text-primary">Gerar Novo Link Externo</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="space-y-1 min-w-0">
                   <Label className="text-xs">Identificação do Link</Label>
-                  <FastInput
+                  <Input
                     value={newLinkForm.titulo}
-                    onValueChange={(v) => setNewLinkForm({ ...newLinkForm, titulo: v })}
-                    placeholder="Ex: Turno Dia A / Encarregados Campo"
+                    onChange={(e) => setNewLinkForm({ ...newLinkForm, titulo: e.target.value })}
+                    placeholder="Ex: Turno Dia A / Campo"
+                    className="h-9 text-xs"
                   />
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Nome do Responsável (Opcional)</Label>
-                  <FastInput
+                <div className="space-y-1 min-w-0">
+                  <Label className="text-xs">Responsável (Opcional)</Label>
+                  <Input
                     value={newLinkForm.responsavel_nome}
-                    onValueChange={(v) => setNewLinkForm({ ...newLinkForm, responsavel_nome: v })}
-                    placeholder="Ex: Agrimaldo Dias (deixe vazio p/ link geral)"
+                    onChange={(e) => setNewLinkForm({ ...newLinkForm, responsavel_nome: e.target.value })}
+                    placeholder="Ex: Agrimaldo (ou vazio p/ geral)"
+                    className="h-9 text-xs"
                   />
                 </div>
               </div>
-              <p className="text-[11px] text-muted-foreground">
-                Se preencher o <strong>Nome do Responsável</strong>, o link fica dedicado a essa pessoa (ela verá todos os lançamentos feitos por esse link). Se deixar em branco, cada pessoa verá apenas o que lançou do próprio aparelho.
+              <p className="text-[11px] text-muted-foreground leading-snug">
+                Com <strong>Responsável</strong> preenchido, o link fica dedicado a essa pessoa. Em branco, cada pessoa vê apenas o que lançou do próprio aparelho.
               </p>
-              <Button size="sm" onClick={handleCreateExternalLink} disabled={creatingLink} className="w-full sm:w-auto">
+              <Button size="sm" onClick={handleCreateExternalLink} disabled={creatingLink} className="w-full sm:w-auto h-8 text-xs">
                 {creatingLink ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Plus className="w-3.5 h-3.5 mr-1.5" />}
                 Gerar e Copiar Link
               </Button>
             </div>
 
             {/* Lista de Links Criados */}
-            <div className="space-y-2.5">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            <div className="space-y-2 min-w-0">
+              <h4 className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
                 Links Cadastrados ({externalLinks.length})
               </h4>
               {externalLinks.length === 0 ? (
-                <div className="text-center py-8 text-xs text-muted-foreground border border-dashed border-border rounded-xl">
-                  Nenhum link externo criado ainda. Clique em <strong>"Gerar e Copiar Link"</strong> acima para criar o primeiro.
+                <div className="text-center py-6 text-xs text-muted-foreground border border-dashed border-border rounded-xl px-3">
+                  Nenhum link externo criado ainda. Clique em <strong>"Gerar e Copiar Link"</strong> acima.
                 </div>
               ) : (
-                externalLinks.map((lnk) => {
-                  const fullUrl = `${window.location.origin}/lancamento-ponto/${lnk.token}`;
-                  return (
-                    <div
-                      key={lnk.id}
-                      className={`p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                        lnk.ativo ? 'bg-card border-border' : 'bg-muted/30 border-border/50 opacity-70'
-                      }`}
-                    >
-                      <div className="min-w-0 space-y-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-bold text-sm text-foreground">{lnk.titulo}</span>
-                          <Badge variant={lnk.ativo ? 'default' : 'secondary'} className="text-[10px]">
-                            {lnk.ativo ? 'Ativo' : 'Desativado'}
-                          </Badge>
-                          {lnk.responsavel_nome && (
-                            <Badge variant="outline" className="text-[10px]">
-                              Responsável: {lnk.responsavel_nome}
+                <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1">
+                  {externalLinks.map((lnk) => {
+                    const fullUrl = `${window.location.origin}/lancamento-ponto/${lnk.token}`;
+                    return (
+                      <div
+                        key={lnk.id}
+                        className={`p-3 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 min-w-0 ${
+                          lnk.ativo ? 'bg-card border-border' : 'bg-muted/30 border-border/50 opacity-70'
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1 overflow-hidden space-y-0.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-bold text-xs sm:text-sm text-foreground truncate">{lnk.titulo}</span>
+                            <Badge variant={lnk.ativo ? 'default' : 'secondary'} className="text-[10px] px-1.5 py-0">
+                              {lnk.ativo ? 'Ativo' : 'Inativo'}
                             </Badge>
-                          )}
+                            {lnk.responsavel_nome && (
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 max-w-[160px] truncate">
+                                {lnk.responsavel_nome}
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-[11px] font-mono text-muted-foreground truncate" title={fullUrl}>
+                            {fullUrl}
+                          </p>
                         </div>
-                        <p className="text-[11px] font-mono text-muted-foreground truncate">{fullUrl}</p>
-                      </div>
 
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => copyExternalLink(lnk.token)}>
-                          <Copy className="w-3.5 h-3.5 mr-1" /> Copiar
-                        </Button>
-                        <Button variant="outline" size="icon" className="h-8 w-8" asChild title="Abrir formulário externo">
-                          <a href={fullUrl} target="_blank" rel="noopener noreferrer">
-                            <ExternalLink className="w-3.5 h-3.5" />
-                          </a>
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          onClick={() => handleToggleExternalLink(lnk)}
-                          title={lnk.ativo ? 'Desativar link' : 'Reativar link'}
-                        >
-                          <Power className={`w-3.5 h-3.5 ${lnk.ativo ? 'text-emerald-600' : 'text-muted-foreground'}`} />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-destructive"
-                          onClick={() => handleDeleteExternalLink(lnk.id)}
-                          title="Excluir link"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
+                        <div className="flex items-center justify-end gap-1 shrink-0">
+                          <Button variant="outline" size="sm" className="h-7 px-2.5 text-xs" onClick={() => copyExternalLink(lnk.token)}>
+                            <Copy className="w-3 h-3 mr-1" /> Copiar
+                          </Button>
+                          <Button variant="outline" size="icon" className="h-7 w-7" asChild title="Abrir formulário externo">
+                            <a href={fullUrl} target="_blank" rel="noopener noreferrer">
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={() => handleToggleExternalLink(lnk)}
+                            title={lnk.ativo ? 'Desativar link' : 'Reativar link'}
+                          >
+                            <Power className={`w-3.5 h-3.5 ${lnk.ativo ? 'text-emerald-600' : 'text-muted-foreground'}`} />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive"
+                            onClick={() => handleDeleteExternalLink(lnk.id)}
+                            title="Excluir link"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })
+                    );
+                  })}
+                </div>
               )}
             </div>
           </div>
