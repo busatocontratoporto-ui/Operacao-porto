@@ -2,7 +2,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { User, Session } from '@supabase/supabase-js';
-import { canViewOrApplyTargetAssessment } from '@/lib/hierarchy';
 
 interface AuthContextType {
   user: User | null;
@@ -35,7 +34,7 @@ const AuthContext = createContext<AuthContextType>({
 });
 
 const ALL_APP_PAGES = [
-  'dashboard', 'colaboradores', 'ponto', 'ferias', 'atestados', 'organograma', 'ausencias',
+  'dashboard', 'colaboradores', 'ponto', 'ferias', 'atestados', 'ausencias',
   'eventos', 'evolucao', 'notificacoes', 'configuracoes',
   'cco', 'cco_painel', 'cco_programacao', 'cco_operacao',
   'cco_corretivas', 'cco_medicao', 'cco_relatorios', 'cco_cadastros', 'admin',
@@ -238,7 +237,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const hasConfiguredPerms = Object.keys(permsMap).length > 0;
     if (dept && !isUserAdmin && !hasConfiguredPerms) {
       const deptPagesAllowed = [
-        'colaboradores', 'ponto', 'ferias', 'atestados', 'organograma', 'ausencias',
+        'colaboradores', 'ponto', 'ferias', 'atestados', 'ausencias',
         'configuracoes'
       ];
       const deptPagesBlocked = ['dashboard', 'eventos', 'evolucao', 'notificacoes', 'admin'];

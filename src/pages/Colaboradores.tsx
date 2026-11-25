@@ -19,10 +19,7 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { usePermissions } from '@/hooks/usePermissions';
-import { useAuth } from '@/contexts/AuthContext';
-import { DEPARTAMENTOS } from '@/lib/departments';
 import { HierarchyBadge } from '@/components/hierarchy/HierarchyBadge';
-import { Building2 } from 'lucide-react';
 
 interface Funcionario {
   id: string; nome: string; email: string; departamento: string; cargo: string;
@@ -47,7 +44,6 @@ const STATUS_COLABORADOR_OPTIONS = [
   { value: 'DESLIGADO', label: 'Desligado' },
 ];
 
-const departamentos = DEPARTAMENTOS;
 const TURNOS = [
   { value: 'dia_a', label: 'Dia A' }, { value: 'dia_b', label: 'Dia B' },
   { value: 'noite_a', label: 'Noite A' }, { value: 'noite_b', label: 'Noite B' },

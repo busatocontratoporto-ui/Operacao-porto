@@ -52,7 +52,6 @@ import {
 import { toast } from 'sonner';
 import { PAGES, PAGE_GROUPS, CCO_PAGE_KEYS, RH_AUSENCIAS_PAGE_KEYS } from '@/lib/permissions';
 import { logAudit } from '@/lib/audit';
-import { DEPARTAMENTOS } from '@/lib/departments';
 
 interface PermEntry {
   page: string;
@@ -359,7 +358,6 @@ export default function Admin() {
             'ponto',
             'ferias',
             'atestados',
-            'organograma',
             'configuracoes',
           ];
           const defaultPerms = PAGES.map((p) => ({

@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Settings,
-  Users, Shield, LogOut, AlertTriangle, CalendarDays,
-  Briefcase, GitMerge, FileWarning, Activity,
+  Users, Shield, LogOut, AlertTriangle,
+  Briefcase, FileWarning, Activity,
   Clock, Truck, Wrench, PanelLeftClose, PanelLeftOpen, FileSpreadsheet, Stethoscope, Palmtree
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -33,7 +33,6 @@ const navGroups: NavGroup[] = [
       { to: '/ponto', icon: Clock, label: 'Ponto', key: 'ponto' },
       { to: '/ferias', icon: Palmtree, label: 'Férias', key: 'ferias' },
       { to: '/atestados', icon: Stethoscope, label: 'Atestados', key: 'atestados' },
-      { to: '/organograma', icon: GitMerge, label: 'Organograma', key: 'organograma' },
     ],
   },
   {

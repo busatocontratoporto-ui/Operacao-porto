@@ -24,13 +24,12 @@ export const PAGE_GROUPS: PageGroupDef[] = [
   {
     id: 'gestao_pessoas',
     module: 'Gestão de Pessoas',
-    description: 'Cadastro de colaboradores, ponto/banco de horas, férias, atestados e organograma',
+    description: 'Cadastro de colaboradores, ponto/banco de horas, férias e atestados médicos',
     pages: [
       { key: 'colaboradores', label: 'Colaboradores', path: '/colaboradores' },
       { key: 'ponto', label: 'Ponto & Banco de Horas', path: '/ponto', legacyAlias: 'ausencias' },
       { key: 'ferias', label: 'Férias & Vencimentos', path: '/ferias', legacyAlias: 'ausencias' },
       { key: 'atestados', label: 'Atestados Médicos', path: '/atestados', legacyAlias: 'ausencias' },
-      { key: 'organograma', label: 'Organograma', path: '/organograma' },
     ],
   },
   {

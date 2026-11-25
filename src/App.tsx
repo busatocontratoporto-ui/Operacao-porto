@@ -20,7 +20,6 @@ import Ponto from "./pages/Ponto";
 import LancamentoPontoExterno from "./pages/LancamentoPontoExterno";
 import Ferias from "./pages/Ferias";
 import Atestados from "./pages/Atestados";
-import Organograma from "./pages/Organograma";
 import EvolucaoContrato from "./pages/EvolucaoContrato";
 import GestaoNotificacoes from "./pages/GestaoNotificacoes";
 import CCO from "./pages/CCO";
@@ -126,7 +125,7 @@ function ProtectedRoutes() {
           <Route path="/ferias" element={<PageGuard pageKey="ferias"><Ferias /></PageGuard>} />
           <Route path="/atestados" element={<PageGuard pageKey="atestados"><Atestados /></PageGuard>} />
           <Route path="/ausencias" element={<Navigate to="/ponto" replace />} />
-          <Route path="/organograma" element={<PageGuard pageKey="organograma"><Organograma /></PageGuard>} />
+          <Route path="/organograma" element={<Navigate to="/colaboradores" replace />} />
 
           {/* Operações, Contratos & SSMA */}
           <Route path="/cco" element={<PageGuard pageKey="cco"><CCO /></PageGuard>} />
@@ -145,7 +144,7 @@ function ProtectedRoutes() {
           <Route path="/treinamentos" element={<Navigate to="/eventos" replace />} />
           <Route path="/assessments" element={<Navigate to="/colaboradores" replace />} />
           <Route path="/disc/*" element={<Navigate to="/colaboradores" replace />} />
-          <Route path="/sucessao" element={<Navigate to="/organograma" replace />} />
+          <Route path="/sucessao" element={<Navigate to="/colaboradores" replace />} />
           <Route path="/cadastro-metas" element={<Navigate to="/colaboradores" replace />} />
           <Route path="/novo" element={<Navigate to="/colaboradores" replace />} />
         </Route>
