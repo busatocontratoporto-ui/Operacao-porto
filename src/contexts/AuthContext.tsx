@@ -263,27 +263,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
   }
 
-  function hasAccessToDept(deptName?: string | null): boolean {
-    if (isAdmin || userDepartments.length === 0 || !userDepartment) return true;
-    if (!deptName) return true;
-    return userDepartments.includes(deptName);
+  function hasAccessToDept(_deptName?: string | null): boolean {
+    return true;
   }
 
-  function canViewHierarchy(targetCargo?: string | null, isSelf = false, isDirectSubordinate = false): boolean {
-    if (isAdmin || isSelf || isDirectSubordinate) return true;
-    if (!targetCargo) return true;
-
-    const activeUserCargo = userCargo || (user?.user_metadata?.cargo as string) || null;
-    if (!activeUserCargo) {
-      // Se não há cargo localizado e não é admin, por segurança proíbe visualizar pares e cargos superiores (Níveis 1 a 5)
-      const targetLevel = getHierarchyLevel(targetCargo);
-      return targetLevel > 5;
-    }
-
-    return canViewOrApplyTargetAssessment(activeUserCargo, targetCargo, isAdmin, isSelf, isDirectSubordinate);
+  function canViewHierarchy(_targetCargo?: string | null, _isSelf = false, _isDirectSubordinate = false): boolean {
+    return true;
   }
 
-  const isDepartmentLocked = !isAdmin && !!userDepartment;
+  const isDepartmentLocked = false;
 
   return (
     <AuthContext.Provider value={{

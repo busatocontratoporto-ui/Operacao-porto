@@ -49,15 +49,14 @@ export default function Organograma() {
   const activeDept = (isDepartmentLocked && userDepartment) ? userDepartment : deptFilter;
 
   const buildTree = useCallback((data: Funcionario[]) => {
-    const filteredData = activeDept === 'todos' ? data : data.filter(f => f.departamento === activeDept);
     const map = new Map<string, TreeNode>();
     const roots: TreeNode[] = [];
 
-    filteredData.forEach(f => {
+    data.forEach(f => {
       map.set(f.id, { ...f, children: [] });
     });
 
-    filteredData.forEach(f => {
+    data.forEach(f => {
       const node = map.get(f.id)!;
       if (f.encarregado_id && map.has(f.encarregado_id)) {
         map.get(f.encarregado_id)!.children.push(node);
@@ -67,20 +66,14 @@ export default function Organograma() {
     });
 
     setTree(roots);
-  }, [activeDept]);
+  }, []);
 
   const fetchFuncionarios = useCallback(async () => {
     setLoading(true);
-    let query = supabase
+    const { data, error } = await supabase
       .from('funcionarios')
       .select('id, nome, cargo, departamento, encarregado_id, foto_url')
       .order('nome');
-
-    if (isDepartmentLocked && userDepartment) {
-      query = query.eq('departamento', userDepartment);
-    }
-
-    const { data, error } = await query;
 
     if (error) {
       toast.error('Erro ao buscar funcionários');
@@ -92,7 +85,7 @@ export default function Organograma() {
     setFuncionarios(funcs);
     buildTree(funcs);
     setLoading(false);
-  }, [buildTree, isDepartmentLocked, userDepartment]);
+  }, [buildTree]);
 
   useEffect(() => {
     fetchFuncionarios();
@@ -288,24 +281,6 @@ export default function Organograma() {
           <p className="text-muted-foreground mt-1">Visualize e edite a hierarquia da empresa. Use a alça lateral (6 pontinhos) de um funcionário para arrastá-lo sobre outro gestor.</p>
         </div>
         <div className="flex items-center gap-2">
-          {isDepartmentLocked && userDepartment ? (
-            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 border border-primary/20 text-primary font-semibold text-xs rounded-lg whitespace-nowrap">
-              <Building2 className="w-4 h-4" />
-              <span>{userDepartment}</span>
-            </div>
-          ) : (
-            <Select value={deptFilter} onValueChange={(v) => { setDeptFilter(v); }}>
-              <SelectTrigger className="w-48 h-9 text-xs">
-                <SelectValue placeholder="Departamento" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="todos">Todos Departamentos</SelectItem>
-                {DEPARTAMENTOS.map(d => (
-                  <SelectItem key={d} value={d}>🏢 {d}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
           <Button variant="outline" size="sm" onClick={fetchFuncionarios}><RefreshCw className="mr-2 h-4 w-4" /> Atualizar</Button>
         </div>
       </div>
@@ -379,11 +354,6 @@ export default function Organograma() {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div>
-                    <Label className="text-xs text-muted-foreground uppercase flex items-center gap-1 mb-1"><Briefcase className="h-3 w-3"/> Departamento</Label>
-                    <p className="text-sm font-medium">{selectedNode.departamento || 'Não informado'}</p>
-                  </div>
-                  
                   {selectedNode.encarregado_id && (
                     <div>
                       <Label className="text-xs text-muted-foreground uppercase flex items-center gap-1 mb-1"><User className="h-3 w-3"/> Responde a</Label>

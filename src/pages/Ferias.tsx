@@ -18,8 +18,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { readExcelRows, parseExcelDate, writeExcelFile } from '@/lib/excel';
 import { calcularSituacaoFerias } from '@/lib/colaboradores-import';
 import { usePermissions } from '@/hooks/usePermissions';
-import { useAuth } from '@/contexts/AuthContext';
-import { DEPARTAMENTOS } from '@/lib/departments';
+import { ColaboradorSearchSelect } from '@/components/colaboradores/ColaboradorSearchSelect';
 
 interface VacationRecord {
   id: string;
@@ -62,16 +61,6 @@ function formatDate(d: string | null | undefined) {
 export default function Ferias() {
   const navigate = useNavigate();
   const { canCreate, canEdit, canDelete } = usePermissions();
-  const { userDepartment, effectiveDepartment, isDepartmentLocked } = useAuth();
-  const [deptFilter, setDeptFilter] = useState<string>('todos');
-
-  useEffect(() => {
-    if (isDepartmentLocked && userDepartment) {
-      setDeptFilter(userDepartment);
-    } else if (effectiveDepartment) {
-      setDeptFilter(effectiveDepartment);
-    }
-  }, [isDepartmentLocked, userDepartment, effectiveDepartment]);
 
   const [funcionarios, setFuncionarios] = useState<Func[]>([]);
   const [vacations, setVacations] = useState<VacationRecord[]>([]);
@@ -106,7 +95,7 @@ export default function Ferias() {
   });
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { fetchData(); }, [deptFilter, userDepartment, isDepartmentLocked]);
+  useEffect(() => { fetchData(); }, []);
 
   async function fetchData() {
     setLoading(true);
@@ -118,19 +107,17 @@ export default function Ferias() {
       supabase.from('vacation_control').select('*').order('start_date', { ascending: true }),
     ]);
 
-    const rawFuncs = ((fRes.data || []) as Func[]).filter(
+    const funcs = ((fRes.data || []) as Func[]).filter(
       (f) => (f.status_colaborador || 'ATIVO').toUpperCase() !== 'DESLIGADO'
     );
-    const activeDept = (isDepartmentLocked && userDepartment) ? userDepartment : deptFilter;
-    const funcs = activeDept === 'todos' ? rawFuncs : rawFuncs.filter((f) => f.departamento === activeDept);
     setFuncionarios(funcs);
 
-    const deptIds = new Set(funcs.map((f) => f.id));
+    const empIds = new Set(funcs.map((f) => f.id));
     const mapById = Object.fromEntries(funcs.map((f) => [f.id, f]));
 
     setVacations(
       (vacRes.data || [])
-        .filter((v) => deptIds.has(v.employee_id))
+        .filter((v) => empIds.has(v.employee_id))
         .map((v) => ({
           ...v,
           employee_name: mapById[v.employee_id]?.nome || 'Colaborador',
@@ -400,21 +387,6 @@ export default function Ferias() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {isDepartmentLocked && userDepartment ? (
-            <div className="flex items-center gap-1.5 px-3 py-2 bg-primary/10 border border-primary/20 text-primary font-semibold text-xs rounded-lg">
-              <Building2 className="w-4 h-4" />
-              <span>{userDepartment}</span>
-            </div>
-          ) : (
-            <Select value={deptFilter} onValueChange={setDeptFilter}>
-              <SelectTrigger className="w-44 h-9 text-xs"><SelectValue placeholder="Contrato / Setor" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="todos">Todos os Contratos</SelectItem>
-                {DEPARTAMENTOS.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          )}
-
           <Button variant="outline" size="sm" onClick={handleExportExcel}>
             <Download className="w-3.5 h-3.5 mr-1.5" /> Exportar Excel
           </Button>
@@ -522,7 +494,7 @@ export default function Ferias() {
                   <thead className="sticky top-0 bg-muted/95 backdrop-blur-sm z-10 border-b border-border">
                     <tr>
                       <th className="text-left px-3 py-2.5 font-bold uppercase text-muted-foreground">Colaborador</th>
-                      <th className="text-left px-3 py-2.5 font-bold uppercase text-muted-foreground">Contrato / Turno</th>
+                      <th className="text-left px-3 py-2.5 font-bold uppercase text-muted-foreground">Escala / Turno</th>
                       <th className="text-left px-3 py-2.5 font-bold uppercase text-muted-foreground">Data Admissão</th>
                       <th className="text-left px-3 py-2.5 font-bold uppercase text-muted-foreground">Última Férias</th>
                       <th className="text-left px-3 py-2.5 font-bold uppercase text-muted-foreground">Próx. Vencimento</th>
@@ -549,8 +521,8 @@ export default function Ferias() {
                               <div className="text-[11px] text-muted-foreground">{f.cargo}</div>
                             </td>
                             <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
-                              <div>{f.departamento}</div>
-                              <div className="text-[10px]">{f.turno || '—'} {f.letra ? `• Letra ${f.letra}` : ''}</div>
+                              <div className="font-medium">{f.letra ? `Letra ${f.letra}` : f.turno || '—'}</div>
+                              <div className="text-[10px]">{f.turno || '—'}</div>
                             </td>
                             <td className="px-3 py-2">
                               <Input
@@ -806,14 +778,12 @@ export default function Ferias() {
           <div className="space-y-4 pt-2">
             <div className="space-y-1.5">
               <Label>Colaborador *</Label>
-              <Select value={vacForm.employee_id} onValueChange={(v) => setVacForm({ ...vacForm, employee_id: v })}>
-                <SelectTrigger><SelectValue placeholder="Selecione o colaborador" /></SelectTrigger>
-                <SelectContent>
-                  {funcionarios.map((f) => (
-                    <SelectItem key={f.id} value={f.id}>{f.nome} ({f.cargo})</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <ColaboradorSearchSelect
+                colaboradores={funcionarios}
+                value={vacForm.employee_id}
+                onValueChange={(v) => setVacForm({ ...vacForm, employee_id: v })}
+                placeholder="Pesquisar colaborador por nome, função ou letra..."
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">

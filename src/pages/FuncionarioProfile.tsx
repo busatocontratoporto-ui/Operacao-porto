@@ -988,7 +988,7 @@ export default function FuncionarioProfile() {
         ['Nome Completo', func.nome, 'Status Atual', func.status_colaborador || 'ATIVO'],
         ['CPF', formatCpf(func.cpf) || 'Não informado', 'Turno / Letra', TURNO_LABELS[func.turno] || func.letra || 'Não definido'],
         ['Cargo / Função', func.cargo, 'Atendimento / Equipamento', func.frente_atendimento || '—'],
-        ['Departamento', func.departamento, 'Polivalência', func.polivalencia || '—'],
+        ['Escala / Turno', TURNO_LABELS[func.turno] || func.letra || '—', 'Polivalência', func.polivalencia || '—'],
         ['Telefone', func.telefone || '—', 'Data de Admissão', `${fmtDate(func.data_admissao)} (${calcTempoDeCasa(func.data_admissao)})`],
       ],
       theme: 'grid',
@@ -1270,12 +1270,6 @@ export default function FuncionarioProfile() {
               <Badge variant="secondary" className="font-semibold">
                 <Briefcase className="w-3 h-3 mr-1" /> {func.cargo}
               </Badge>
-              <Badge variant="outline">{func.departamento}</Badge>
-              {func.contrato_vinculado && func.contrato_vinculado !== func.departamento && (
-                <Badge variant="outline" className="border-primary/30 text-primary bg-primary/5">
-                  Vinculado: {func.contrato_vinculado}
-                </Badge>
-              )}
               {(func.turno || func.letra) && (
                 <Badge variant="outline" className="bg-indigo-500/10 text-indigo-700 border-indigo-500/20">
                   Escala: {TURNO_LABELS[func.turno] || `Letra ${func.letra}`}

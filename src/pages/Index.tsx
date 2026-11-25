@@ -325,7 +325,7 @@ export default function Index() {
                 {filteredEmployees.map(f => (
                   <button key={f.id} onClick={() => { setSelectedEmployee(f); setEmployeeSearch(''); setShowEmployeeDropdown(false); }} className="w-full text-left px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-300 hover:bg-slate-900 transition-colors border-b border-slate-800/50 last:border-0 truncate flex items-center justify-between">
                     <span>{f.nome}</span>
-                    <span className="text-[9px] text-slate-500 data-mono">{f.departamento}</span>
+                    <span className="text-[9px] text-slate-500 data-mono">{f.cargo}</span>
                   </button>
                 ))}
               </div>

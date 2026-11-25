@@ -135,17 +135,6 @@ export default function Colaboradores() {
       (f.frente_atendimento || '').toLowerCase().includes(q) ||
       (f.polivalencia || '').toLowerCase().includes(q);
     
-    // Filtragem por departamento travado ou selecionado
-    let matchDept = true;
-    const isGlobalEmpDept = f.departamento?.includes('Todos') || f.departamento === 'all' || f.departamento === 'todos';
-    if (isGlobalEmpDept) {
-      matchDept = true;
-    } else if (isDepartmentLocked && userDepartments.length > 0) {
-      matchDept = userDepartments.includes(f.departamento) || (!!f.contrato_vinculado && userDepartments.includes(f.contrato_vinculado));
-    } else if (deptFilter !== 'todos') {
-      matchDept = f.departamento === deptFilter || f.contrato_vinculado === deptFilter;
-    }
-
     const st = (f.status_colaborador || 'ATIVO').toUpperCase();
     let matchStatus = true;
     if (statusFilter === 'ATIVOS') matchStatus = st === 'ATIVO' || st === 'RESERVA/CB';
@@ -154,13 +143,8 @@ export default function Colaboradores() {
     else if (statusFilter === 'DESLIGADO') matchStatus = st === 'DESLIGADO';
 
     const matchTurno = turnoFilter === 'todos' || f.turno === turnoFilter;
-    const isSelf = !!user?.email && f.email?.toLowerCase().trim() === user.email.toLowerCase().trim();
-    const loggedFuncId = user?.email ? funcionarios.find(fn => fn.email?.toLowerCase().trim() === user.email.toLowerCase().trim())?.id : null;
-    const isDirectSubordinate = !!loggedFuncId && f.encarregado_id === loggedFuncId;
 
-    const matchHierarchy = isSelf || isDirectSubordinate || canViewHierarchy(f.cargo, isSelf, isDirectSubordinate);
-
-    return matchSearch && matchDept && matchStatus && matchTurno && matchHierarchy;
+    return matchSearch && matchStatus && matchTurno;
   });
 
   // Paginação: recalcula sempre que filtros mudam
@@ -570,19 +554,8 @@ export default function Colaboradores() {
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input placeholder="Buscar por nome ou cargo..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+          <Input placeholder="Buscar por nome, cargo, CPF ou atendimento..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
         </div>
-        {isDepartmentLocked && userDepartment ? (
-          <div className="flex items-center gap-1.5 px-3 py-2 bg-primary/10 border border-primary/20 text-primary font-semibold text-xs rounded-lg whitespace-nowrap">
-            <Building2 className="w-4 h-4" />
-            <span>{userDepartment}</span>
-          </div>
-        ) : (
-          <Select value={deptFilter} onValueChange={setDeptFilter}>
-            <SelectTrigger className="w-full sm:w-44"><SelectValue placeholder="Departamento" /></SelectTrigger>
-            <SelectContent><SelectItem value="todos">Todos Departamentos</SelectItem>{departamentos.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}</SelectContent>
-          </Select>
-        )}
         <Select value={turnoFilter} onValueChange={setTurnoFilter}>
           <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="Turno/Escala" /></SelectTrigger>
           <SelectContent>
@@ -719,7 +692,6 @@ export default function Colaboradores() {
                   
                   <div className="flex flex-wrap justify-center gap-1.5 mt-3">
                     <HierarchyBadge cargo={f.cargo} />
-                    <span className="inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground">{f.departamento}</span>
                     {f.status_colaborador && f.status_colaborador !== 'ATIVO' && (
                       <span className={`inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full ${
                         f.status_colaborador === 'DESLIGADO'
@@ -729,11 +701,6 @@ export default function Colaboradores() {
                           : 'bg-amber-500/15 text-amber-700'
                       }`}>
                         {f.status_colaborador}
-                      </span>
-                    )}
-                    {f.contrato_vinculado && f.contrato_vinculado !== f.departamento && (
-                      <span className="inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20" title={`Vinculado ao ${f.contrato_vinculado}`}>
-                        📍 Vinculado: {f.contrato_vinculado}
                       </span>
                     )}
                     {turnoLabel && <span className="inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded-full bg-chart-3/10 text-chart-3">{turnoLabel}</span>}

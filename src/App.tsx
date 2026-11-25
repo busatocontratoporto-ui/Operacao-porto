@@ -17,6 +17,7 @@ import FuncionarioProfile from "./pages/FuncionarioProfile";
 import Eventos from "./pages/Eventos";
 import Colaboradores from "./pages/Colaboradores";
 import Ponto from "./pages/Ponto";
+import LancamentoPontoExterno from "./pages/LancamentoPontoExterno";
 import Ferias from "./pages/Ferias";
 import Atestados from "./pages/Atestados";
 import Organograma from "./pages/Organograma";
@@ -166,6 +167,7 @@ const App = () => (
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/lancamento-ponto/:token" element={<LancamentoPontoExterno />} />
             <Route path="/*" element={<ProtectedRoutes />} />
           </Routes>
         </AuthProvider>

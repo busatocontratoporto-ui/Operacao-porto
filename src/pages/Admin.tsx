@@ -768,7 +768,7 @@ export default function Admin() {
       </motion.div>
 
       {/* KPI Cards Summary */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="glass-card rounded-xl p-4 border-l-4 border-l-primary flex items-center justify-between">
           <div>
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total de Contas</p>
@@ -782,24 +782,13 @@ export default function Admin() {
 
         <div className="glass-card rounded-xl p-4 border-l-4 border-l-amber-500 flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Acesso Global</p>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Administradores</p>
             <h3 className="text-2xl font-black text-amber-600 dark:text-amber-400 mt-1">
-              {users.filter((u) => !u.departamento || u.departamento === 'all' || u.departamento.includes('Todos')).length}
+              {users.filter((u) => u.role === 'admin').length}
             </h3>
-            <p className="text-[11px] text-muted-foreground mt-0.5">Diretoria, Admin & Gerente Geral</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">Acesso administrativo total</p>
           </div>
           <Crown className="w-8 h-8 text-amber-500 opacity-80" />
-        </div>
-
-        <div className="glass-card rounded-xl p-4 border-l-4 border-l-blue-500 flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Gestores de Setor</p>
-            <h3 className="text-2xl font-black text-blue-600 dark:text-blue-400 mt-1">
-              {users.filter((u) => u.departamento && u.departamento !== 'all' && !u.departamento.includes('Todos')).length}
-            </h3>
-            <p className="text-[11px] text-muted-foreground mt-0.5">Vinculados a contratos específicos</p>
-          </div>
-          <Building2 className="w-8 h-8 text-blue-500 opacity-80" />
         </div>
 
         <div className="glass-card rounded-xl p-4 border-l-4 border-l-emerald-500 flex items-center justify-between">
@@ -882,65 +871,6 @@ export default function Admin() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2 border border-border/80 rounded-xl p-3.5 bg-muted/20">
-                  <div className="flex items-center justify-between mb-1">
-                    <Label className="font-semibold text-xs uppercase tracking-wider text-muted-foreground">
-                      Departamentos & Setores de Acesso
-                    </Label>
-                    {newUser.departamento && newUser.departamento !== 'all' && (
-                      <span className="text-[10px] font-bold bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                        {newUser.departamento.split(',').filter(Boolean).length} setor(es)
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-2 p-2 rounded-lg bg-background border border-border/60 cursor-pointer hover:bg-muted/40 transition-colors">
-                      <Checkbox
-                        checked={!newUser.departamento || newUser.departamento === 'all'}
-                        onCheckedChange={(checked) => {
-                          setNewUser({ ...newUser, departamento: checked ? '' : DEPARTAMENTOS[0] });
-                        }}
-                      />
-                      <span className="text-xs font-bold text-foreground">
-                        🌐 Todos / Acesso Global (Diretoria/Admin/Gerente Geral)
-                      </span>
-                    </label>
-
-                    {newUser.departamento !== '' && newUser.departamento !== 'all' && (
-                      <div className="grid grid-cols-2 gap-1.5 pt-1.5 max-h-48 overflow-y-auto pr-1">
-                        {DEPARTAMENTOS.map((d) => {
-                          const selectedList = (newUser.departamento || '')
-                            .split(',')
-                            .map((s) => s.trim())
-                            .filter(Boolean);
-                          const isChecked = selectedList.includes(d);
-                          return (
-                            <label
-                              key={d}
-                              className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
-                                isChecked
-                                  ? 'bg-primary/10 border-primary/40 font-semibold text-primary'
-                                  : 'bg-background border-border/60 hover:bg-muted/30 text-muted-foreground'
-                              }`}
-                            >
-                              <Checkbox
-                                checked={isChecked}
-                                onCheckedChange={(checked) => {
-                                  const newList = checked
-                                    ? [...selectedList, d]
-                                    : selectedList.filter((item) => item !== d);
-                                  setNewUser({ ...newUser, departamento: newList.join(', ') });
-                                }}
-                              />
-                              <span className="truncate">{d}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
                 <div className="space-y-2">
                   <Label>Senha</Label>
                   <div className="relative">
@@ -975,7 +905,7 @@ export default function Admin() {
               <Input
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Buscar usuário por nome, e-mail ou setor..."
+                placeholder="Buscar usuário por nome ou e-mail..."
                 className="pl-9 h-9 text-xs"
               />
             </div>
@@ -1060,24 +990,6 @@ export default function Admin() {
                               ⚙️ Acesso Customizado
                             </span>
                           )}
-                          {u.departamento && u.departamento !== 'all' ? (
-                            u.departamento
-                              .split(',')
-                              .map((d) => d.trim())
-                              .filter(Boolean)
-                              .map((d) => (
-                                <span
-                                  key={d}
-                                  className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
-                                >
-                                  📍 {d}
-                                </span>
-                              ))
-                          ) : (
-                            <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-slate-500/10 text-slate-600 dark:text-slate-400">
-                              🌐 Acesso Global
-                            </span>
-                          )}
                           {u.banned && (
                             <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-destructive/15 text-destructive flex items-center gap-1">
                               <Ban className="w-3 h-3" /> Bloqueado
@@ -1144,7 +1056,7 @@ export default function Admin() {
                           <Shield className="w-4 h-4 mr-2 text-primary" /> Autorizar Módulos & Páginas
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => openEditUser(u)}>
-                          <Edit className="w-4 h-4 mr-2 text-muted-foreground" /> Editar Dados / Perfil / Setor
+                          <Edit className="w-4 h-4 mr-2 text-muted-foreground" /> Editar Dados / Perfil
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => openChangePassword(u)}>
                           <KeyRound className="w-4 h-4 mr-2 text-muted-foreground" /> Alterar Senha
@@ -1567,65 +1479,6 @@ export default function Admin() {
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-            <div className="space-y-2 border border-border/80 rounded-xl p-3.5 bg-muted/20">
-              <div className="flex items-center justify-between mb-1">
-                <Label className="font-semibold text-xs uppercase tracking-wider text-muted-foreground">
-                  Departamentos & Setores de Acesso
-                </Label>
-                {editDepartamento && editDepartamento !== 'all' && (
-                  <span className="text-[10px] font-bold bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                    {editDepartamento.split(',').filter(Boolean).length} setor(es)
-                  </span>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <label className="flex items-center gap-2 p-2 rounded-lg bg-background border border-border/60 cursor-pointer hover:bg-muted/40 transition-colors">
-                  <Checkbox
-                    checked={!editDepartamento || editDepartamento === 'all'}
-                    onCheckedChange={(checked) => {
-                      setEditDepartamento(checked ? '' : DEPARTAMENTOS[0]);
-                    }}
-                  />
-                  <span className="text-xs font-bold text-foreground">
-                    🌐 Todos / Acesso Global (Diretoria/Admin/Gerente Geral)
-                  </span>
-                </label>
-
-                {editDepartamento !== '' && editDepartamento !== 'all' && (
-                  <div className="grid grid-cols-2 gap-1.5 pt-1.5 max-h-48 overflow-y-auto pr-1">
-                    {DEPARTAMENTOS.map((d) => {
-                      const selectedList = (editDepartamento || '')
-                        .split(',')
-                        .map((s) => s.trim())
-                        .filter(Boolean);
-                      const isChecked = selectedList.includes(d);
-                      return (
-                        <label
-                          key={d}
-                          className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
-                            isChecked
-                              ? 'bg-primary/10 border-primary/40 font-semibold text-primary'
-                              : 'bg-background border-border/60 hover:bg-muted/30 text-muted-foreground'
-                          }`}
-                        >
-                          <Checkbox
-                            checked={isChecked}
-                            onCheckedChange={(checked) => {
-                              const newList = checked
-                                ? [...selectedList, d]
-                                : selectedList.filter((item) => item !== d);
-                              setEditDepartamento(newList.join(', '));
-                            }}
-                          />
-                          <span className="truncate">{d}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
             </div>
             <Button onClick={saveEditUser} className="w-full" disabled={savingEdit}>
               {savingEdit ? 'Salvando...' : 'Salvar Alterações'}

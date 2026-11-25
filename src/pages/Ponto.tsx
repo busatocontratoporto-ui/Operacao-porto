@@ -3,14 +3,17 @@ import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
   Clock, Plus, Trash2, AlertTriangle, Users, TrendingUp, Shield,
-  Upload, Download, ShieldAlert, Search, X, MinusCircle, Eye, CalendarDays
+  Upload, Download, ShieldAlert, Search, X, MinusCircle, Eye, CalendarDays,
+  Link2, Copy, ExternalLink, Power, Loader2
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import PeriodFilter, { getPortoPeriod, type PeriodRange } from '@/components/filters/PeriodFilter';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { FastInput } from '@/components/ui/fast-input';
 import { FastTextarea } from '@/components/ui/fast-textarea';
 import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
@@ -24,8 +27,7 @@ import {
 import { readExcelRows, parseExcelDate, writeExcelFile } from '@/lib/excel';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAuth } from '@/contexts/AuthContext';
-import { DEPARTAMENTOS } from '@/lib/departments';
-import { Building2 } from 'lucide-react';
+import { ColaboradorSearchSelect } from '@/components/colaboradores/ColaboradorSearchSelect';
 
 interface Attendance {
   id: string;
@@ -34,10 +36,21 @@ interface Attendance {
   status: string;
   observation: string;
   created_at: string;
+  external_link_id?: string | null;
+  launched_by_name?: string | null;
   employee_name?: string;
   turno?: string;
   letra?: string;
   cargo?: string;
+}
+
+interface ExternalPontoLink {
+  id: string;
+  token: string;
+  titulo: string;
+  responsavel_nome: string;
+  ativo: boolean;
+  created_at: string;
 }
 
 interface OvertimeRecord {
@@ -119,26 +132,21 @@ function formatDate(d: string | null) {
 export default function Ponto() {
   const navigate = useNavigate();
   const { canCreate, canDelete } = usePermissions();
-  const { userDepartment, effectiveDepartment, isDepartmentLocked } = useAuth();
-  const [deptFilter, setDeptFilter] = useState<string>('todos');
+  const { user } = useAuth();
   const [period, setPeriod] = useState<PeriodRange>(getPortoPeriod(0));
-
-  useEffect(() => {
-    if (isDepartmentLocked && userDepartment) {
-      setDeptFilter(userDepartment);
-    } else if (effectiveDepartment) {
-      setDeptFilter(effectiveDepartment);
-    }
-  }, [isDepartmentLocked, userDepartment, effectiveDepartment]);
 
   const [attendance, setAttendance] = useState<Attendance[]>([]);
   const [overtimes, setOvertimes] = useState<OvertimeRecord[]>([]);
   const [warnings, setWarnings] = useState<Warning[]>([]);
   const [funcionarios, setFuncionarios] = useState<Func[]>([]);
+  const [externalLinks, setExternalLinks] = useState<ExternalPontoLink[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [warningDialogOpen, setWarningDialogOpen] = useState(false);
+  const [linksDialogOpen, setLinksDialogOpen] = useState(false);
+  const [creatingLink, setCreatingLink] = useState(false);
+  const [newLinkForm, setNewLinkForm] = useState({ titulo: '', responsavel_nome: '' });
 
   const [employeeSearch, setEmployeeSearch] = useState('');
   const [selectedEmployee, setSelectedEmployee] = useState<Func | null>(null);
@@ -163,7 +171,83 @@ export default function Ponto() {
   });
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { fetchAll(); }, [period, deptFilter, userDepartment, isDepartmentLocked]);
+  useEffect(() => { fetchAll(); }, [period]);
+
+  async function fetchExternalLinks() {
+    const { data } = await supabase
+      .from('ponto_external_links' as never)
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (data) setExternalLinks(data as unknown as ExternalPontoLink[]);
+  }
+
+  async function handleCreateExternalLink() {
+    const titulo = newLinkForm.titulo.trim() || (newLinkForm.responsavel_nome.trim() ? `Link - ${newLinkForm.responsavel_nome.trim()}` : 'Lançamento Externo de Ponto');
+    setCreatingLink(true);
+    const token = `porto-${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36).slice(-4)}`;
+    const { data, error } = await supabase
+      .from('ponto_external_links' as never)
+      .insert({
+        token,
+        titulo,
+        responsavel_nome: newLinkForm.responsavel_nome.trim(),
+        ativo: true,
+        created_by: user?.id || null,
+      } as never)
+      .select()
+      .single();
+    setCreatingLink(false);
+    if (error) {
+      toast.error('Erro ao gerar link externo: ' + error.message);
+      return;
+    }
+    const created = data as unknown as ExternalPontoLink;
+    const url = `${window.location.origin}/lancamento-ponto/${created.token}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success('Link criado e copiado para a área de transferência!');
+    } catch {
+      toast.success('Link externo criado com sucesso!');
+    }
+    setNewLinkForm({ titulo: '', responsavel_nome: '' });
+    fetchExternalLinks();
+  }
+
+  async function handleToggleExternalLink(link: ExternalPontoLink) {
+    const { error } = await supabase
+      .from('ponto_external_links' as never)
+      .update({ ativo: !link.ativo } as never)
+      .eq('id', link.id);
+    if (error) {
+      toast.error('Erro ao alterar status do link.');
+      return;
+    }
+    toast.success(link.ativo ? 'Link desativado.' : 'Link reativado!');
+    fetchExternalLinks();
+  }
+
+  async function handleDeleteExternalLink(id: string) {
+    const { error } = await supabase
+      .from('ponto_external_links' as never)
+      .delete()
+      .eq('id', id);
+    if (error) {
+      toast.error('Erro ao remover link.');
+      return;
+    }
+    toast.success('Link externo removido.');
+    fetchExternalLinks();
+  }
+
+  async function copyExternalLink(token: string) {
+    const url = `${window.location.origin}/lancamento-ponto/${token}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success('Link copiado! Envie para o responsável lançar o ponto.');
+    } catch {
+      toast.error('Não foi possível copiar automaticamente: ' + url);
+    }
+  }
 
   async function fetchAll() {
     setLoading(true);
@@ -180,19 +264,18 @@ export default function Ponto() {
       supabase.from('employee_warnings').select('*').order('date', { ascending: false }),
     ]);
 
-    const rawFuncs = ((fRes.data || []) as Func[]).filter(
+    const funcs = ((fRes.data || []) as Func[]).filter(
       (f) => (f.status_colaborador || 'ATIVO').toUpperCase() !== 'DESLIGADO'
     );
-    const activeDept = (isDepartmentLocked && userDepartment) ? userDepartment : deptFilter;
-    const funcs = activeDept === 'todos' ? rawFuncs : rawFuncs.filter((f) => f.departamento === activeDept);
     setFuncionarios(funcs);
+    fetchExternalLinks();
 
-    const deptEmpIds = new Set(funcs.map((f) => f.id));
+    const empIds = new Set(funcs.map((f) => f.id));
     const nameMap = Object.fromEntries(funcs.map((f) => [f.id, f]));
 
     setAttendance(
       (attRes.data || [])
-        .filter((a) => deptEmpIds.has(a.employee_id))
+        .filter((a) => empIds.has(a.employee_id))
         .map((a) => ({
           ...a,
           status: a.status === 'falta' ? 'falta_injustificada' : a.status,
@@ -205,7 +288,7 @@ export default function Ponto() {
 
     setOvertimes(
       (ovtRes.data || [])
-        .filter((o) => deptEmpIds.has(o.employee_id))
+        .filter((o) => empIds.has(o.employee_id))
         .map((o) => ({
           ...o,
           employee_name: nameMap[o.employee_id]?.nome || 'Desconhecido',
@@ -214,7 +297,7 @@ export default function Ponto() {
 
     setWarnings(
       (warnRes.data || [])
-        .filter((w) => deptEmpIds.has(w.employee_id))
+        .filter((w) => empIds.has(w.employee_id))
         .map((w) => ({
           ...w,
           employee_name: nameMap[w.employee_id]?.nome || 'Desconhecido',
@@ -515,21 +598,6 @@ export default function Ponto() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {isDepartmentLocked && userDepartment ? (
-            <div className="flex items-center gap-1.5 px-3 py-2 bg-primary/10 border border-primary/20 text-primary font-semibold text-xs rounded-lg">
-              <Building2 className="w-4 h-4" />
-              <span>{userDepartment}</span>
-            </div>
-          ) : (
-            <Select value={deptFilter} onValueChange={setDeptFilter}>
-              <SelectTrigger className="w-44 h-9 text-xs"><SelectValue placeholder="Departamento" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="todos">Todos os Contratos</SelectItem>
-                {DEPARTAMENTOS.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          )}
-
           {canCreate('ponto') && (
             <>
               <input ref={pontoFileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImportPonto} />
@@ -542,6 +610,17 @@ export default function Ponto() {
               </Button>
               <Button variant="outline" size="sm" onClick={() => setWarningDialogOpen(true)}>
                 <ShieldAlert className="w-3.5 h-3.5 mr-1.5 text-destructive" /> Advertência
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-primary/40 text-primary hover:bg-primary/5"
+                onClick={() => {
+                  fetchExternalLinks();
+                  setLinksDialogOpen(true);
+                }}
+              >
+                <Link2 className="w-3.5 h-3.5 mr-1.5" /> Link Externo
               </Button>
               <Button size="sm" onClick={() => setDialogOpen(true)}>
                 <Plus className="w-4 h-4 mr-1.5" /> Lançar Ponto
@@ -784,7 +863,14 @@ export default function Ponto() {
                             {statusLabels[a.status] || a.status}
                           </span>
                         </td>
-                        <td className="px-4 py-2.5 text-xs text-muted-foreground max-w-[260px] truncate">{a.observation || '—'}</td>
+                        <td className="px-4 py-2.5 text-xs text-muted-foreground max-w-[280px]">
+                          <div className="truncate">{a.observation || '—'}</div>
+                          {a.launched_by_name && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-primary mt-0.5">
+                              <Link2 className="w-3 h-3" /> Externo: {a.launched_by_name}
+                            </span>
+                          )}
+                        </td>
                         <td className="px-4 py-2.5 text-right">
                           {canDelete('ponto') && (
                             <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => deleteAttendance(a.id)}>
@@ -914,14 +1000,12 @@ export default function Ponto() {
           <div className="space-y-4 pt-2">
             <div className="space-y-1.5">
               <Label>Colaborador *</Label>
-              <Select value={form.employee_id} onValueChange={(v) => setForm({ ...form, employee_id: v })}>
-                <SelectTrigger><SelectValue placeholder="Selecione o colaborador" /></SelectTrigger>
-                <SelectContent>
-                  {funcionarios.map((f) => (
-                    <SelectItem key={f.id} value={f.id}>{f.nome} ({f.cargo})</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <ColaboradorSearchSelect
+                colaboradores={funcionarios}
+                value={form.employee_id}
+                onValueChange={(v) => setForm({ ...form, employee_id: v })}
+                placeholder="Pesquisar colaborador por nome, função ou letra..."
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
@@ -959,14 +1043,12 @@ export default function Ponto() {
           <div className="space-y-4 pt-2">
             <div className="space-y-1.5">
               <Label>Colaborador *</Label>
-              <Select value={warningForm.employee_id} onValueChange={(v) => setWarningForm({ ...warningForm, employee_id: v })}>
-                <SelectTrigger><SelectValue placeholder="Selecione o colaborador" /></SelectTrigger>
-                <SelectContent>
-                  {funcionarios.map((f) => (
-                    <SelectItem key={f.id} value={f.id}>{f.nome} ({f.cargo})</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <ColaboradorSearchSelect
+                colaboradores={funcionarios}
+                value={warningForm.employee_id}
+                onValueChange={(v) => setWarningForm({ ...warningForm, employee_id: v })}
+                placeholder="Pesquisar colaborador por nome, função ou letra..."
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
@@ -993,6 +1075,120 @@ export default function Ponto() {
               <FastTextarea value={warningForm.observation} onValueChange={(v) => setWarningForm((p) => ({ ...p, observation: v }))} rows={2} />
             </div>
             <Button className="w-full" onClick={handleCreateWarning}>Salvar Advertência</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: Gerenciar Links de Lançamento Externo */}
+      <Dialog open={linksDialogOpen} onOpenChange={setLinksDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Link2 className="w-5 h-5 text-primary" /> Links de Lançamento Externo de Ponto
+            </DialogTitle>
+            <DialogDescription>
+              Quem receber o link poderá lançar faltas, extras e banco de horas e consultar apenas os próprios lançamentos, sem acesso ao restante do sistema.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-5 pt-2">
+            {/* Criar Novo Link */}
+            <div className="p-4 rounded-xl bg-muted/30 border border-border space-y-3">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-primary">Gerar Novo Link Externo</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Identificação do Link</Label>
+                  <FastInput
+                    value={newLinkForm.titulo}
+                    onValueChange={(v) => setNewLinkForm({ ...newLinkForm, titulo: v })}
+                    placeholder="Ex: Turno Dia A / Encarregados Campo"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Nome do Responsável (Opcional)</Label>
+                  <FastInput
+                    value={newLinkForm.responsavel_nome}
+                    onValueChange={(v) => setNewLinkForm({ ...newLinkForm, responsavel_nome: v })}
+                    placeholder="Ex: Agrimaldo Dias (deixe vazio p/ link geral)"
+                  />
+                </div>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Se preencher o <strong>Nome do Responsável</strong>, o link fica dedicado a essa pessoa (ela verá todos os lançamentos feitos por esse link). Se deixar em branco, cada pessoa verá apenas o que lançou do próprio aparelho.
+              </p>
+              <Button size="sm" onClick={handleCreateExternalLink} disabled={creatingLink} className="w-full sm:w-auto">
+                {creatingLink ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Plus className="w-3.5 h-3.5 mr-1.5" />}
+                Gerar e Copiar Link
+              </Button>
+            </div>
+
+            {/* Lista de Links Criados */}
+            <div className="space-y-2.5">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                Links Cadastrados ({externalLinks.length})
+              </h4>
+              {externalLinks.length === 0 ? (
+                <div className="text-center py-8 text-xs text-muted-foreground border border-dashed border-border rounded-xl">
+                  Nenhum link externo criado ainda. Clique em <strong>"Gerar e Copiar Link"</strong> acima para criar o primeiro.
+                </div>
+              ) : (
+                externalLinks.map((lnk) => {
+                  const fullUrl = `${window.location.origin}/lancamento-ponto/${lnk.token}`;
+                  return (
+                    <div
+                      key={lnk.id}
+                      className={`p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                        lnk.ativo ? 'bg-card border-border' : 'bg-muted/30 border-border/50 opacity-70'
+                      }`}
+                    >
+                      <div className="min-w-0 space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-sm text-foreground">{lnk.titulo}</span>
+                          <Badge variant={lnk.ativo ? 'default' : 'secondary'} className="text-[10px]">
+                            {lnk.ativo ? 'Ativo' : 'Desativado'}
+                          </Badge>
+                          {lnk.responsavel_nome && (
+                            <Badge variant="outline" className="text-[10px]">
+                              Responsável: {lnk.responsavel_nome}
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-[11px] font-mono text-muted-foreground truncate">{fullUrl}</p>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => copyExternalLink(lnk.token)}>
+                          <Copy className="w-3.5 h-3.5 mr-1" /> Copiar
+                        </Button>
+                        <Button variant="outline" size="icon" className="h-8 w-8" asChild title="Abrir formulário externo">
+                          <a href={fullUrl} target="_blank" rel="noopener noreferrer">
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => handleToggleExternalLink(lnk)}
+                          title={lnk.ativo ? 'Desativar link' : 'Reativar link'}
+                        >
+                          <Power className={`w-3.5 h-3.5 ${lnk.ativo ? 'text-emerald-600' : 'text-muted-foreground'}`} />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive"
+                          onClick={() => handleDeleteExternalLink(lnk.id)}
+                          title="Excluir link"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
         </DialogContent>
       </Dialog>

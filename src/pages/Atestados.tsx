@@ -22,8 +22,7 @@ import {
 } from 'recharts';
 import { writeExcelFile } from '@/lib/excel';
 import { usePermissions } from '@/hooks/usePermissions';
-import { useAuth } from '@/contexts/AuthContext';
-import { DEPARTAMENTOS } from '@/lib/departments';
+import { ColaboradorSearchSelect } from '@/components/colaboradores/ColaboradorSearchSelect';
 
 interface MedicalRecord {
   id: string;
@@ -71,17 +70,7 @@ function calcLastDayOff(startIso: string, dias: number): string {
 export default function Atestados() {
   const navigate = useNavigate();
   const { canCreate, canEdit, canDelete } = usePermissions();
-  const { userDepartment, effectiveDepartment, isDepartmentLocked } = useAuth();
-  const [deptFilter, setDeptFilter] = useState<string>('todos');
   const [period, setPeriod] = useState<PeriodRange>(getPortoPeriod(0));
-
-  useEffect(() => {
-    if (isDepartmentLocked && userDepartment) {
-      setDeptFilter(userDepartment);
-    } else if (effectiveDepartment) {
-      setDeptFilter(effectiveDepartment);
-    }
-  }, [isDepartmentLocked, userDepartment, effectiveDepartment]);
 
   const [funcionarios, setFuncionarios] = useState<Func[]>([]);
   const [records, setRecords] = useState<MedicalRecord[]>([]);
@@ -105,7 +94,7 @@ export default function Atestados() {
   const [form, setForm] = useState(emptyForm);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { fetchData(); }, [period, deptFilter, userDepartment, isDepartmentLocked]);
+  useEffect(() => { fetchData(); }, [period]);
 
   async function fetchData() {
     setLoading(true);
@@ -123,19 +112,17 @@ export default function Atestados() {
         .order('date', { ascending: false }),
     ]);
 
-    const rawFuncs = ((fRes.data || []) as Func[]).filter(
+    const funcs = ((fRes.data || []) as Func[]).filter(
       (f) => (f.status_colaborador || 'ATIVO').toUpperCase() !== 'DESLIGADO'
     );
-    const activeDept = (isDepartmentLocked && userDepartment) ? userDepartment : deptFilter;
-    const funcs = activeDept === 'todos' ? rawFuncs : rawFuncs.filter((f) => f.departamento === activeDept);
     setFuncionarios(funcs);
 
-    const deptIds = new Set(funcs.map((f) => f.id));
+    const empIds = new Set(funcs.map((f) => f.id));
     const mapById = Object.fromEntries(funcs.map((f) => [f.id, f]));
 
     setRecords(
       (attRes.data || [])
-        .filter((a) => deptIds.has(a.employee_id))
+        .filter((a) => empIds.has(a.employee_id))
         .map((a) => ({
           ...a,
           status: a.status === 'afastamento' ? 'afastamento' : 'atestado',
@@ -311,21 +298,6 @@ export default function Atestados() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {isDepartmentLocked && userDepartment ? (
-            <div className="flex items-center gap-1.5 px-3 py-2 bg-primary/10 border border-primary/20 text-primary font-semibold text-xs rounded-lg">
-              <Building2 className="w-4 h-4" />
-              <span>{userDepartment}</span>
-            </div>
-          ) : (
-            <Select value={deptFilter} onValueChange={setDeptFilter}>
-              <SelectTrigger className="w-44 h-9 text-xs"><SelectValue placeholder="Contrato / Setor" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="todos">Todos os Contratos</SelectItem>
-                {DEPARTAMENTOS.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          )}
-
           <Button variant="outline" size="sm" onClick={handleExportExcel}>
             <Download className="w-3.5 h-3.5 mr-1.5" /> Exportar Excel
           </Button>
@@ -609,14 +581,12 @@ export default function Atestados() {
           <div className="space-y-4 pt-2">
             <div className="space-y-1.5">
               <Label>Colaborador *</Label>
-              <Select value={form.employee_id} onValueChange={(v) => setForm({ ...form, employee_id: v })}>
-                <SelectTrigger><SelectValue placeholder="Selecione o colaborador" /></SelectTrigger>
-                <SelectContent>
-                  {funcionarios.map((f) => (
-                    <SelectItem key={f.id} value={f.id}>{f.nome} ({f.cargo})</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <ColaboradorSearchSelect
+                colaboradores={funcionarios}
+                value={form.employee_id}
+                onValueChange={(v) => setForm({ ...form, employee_id: v })}
+                placeholder="Pesquisar colaborador por nome, função ou letra..."
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
