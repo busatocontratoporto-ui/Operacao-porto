@@ -30,23 +30,11 @@ interface TreeNode extends Funcionario {
 
 export default function Organograma() {
   const navigate = useNavigate();
-  const { userDepartment, effectiveDepartment, isDepartmentLocked, isAdmin } = useAuth();
   const [loading, setLoading] = useState(true);
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [selectedNode, setSelectedNode] = useState<Funcionario | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [deptFilter, setDeptFilter] = useState<string>('todos');
-
-  useEffect(() => {
-    if (isDepartmentLocked && userDepartment) {
-      setDeptFilter(userDepartment);
-    } else if (effectiveDepartment) {
-      setDeptFilter(effectiveDepartment);
-    }
-  }, [isDepartmentLocked, userDepartment, effectiveDepartment]);
-
-  const activeDept = (isDepartmentLocked && userDepartment) ? userDepartment : deptFilter;
 
   const buildTree = useCallback((data: Funcionario[]) => {
     const map = new Map<string, TreeNode>();

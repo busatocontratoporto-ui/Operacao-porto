@@ -64,24 +64,13 @@ function letraFromTurno(turno: string): string {
 export default function Colaboradores() {
   const navigate = useNavigate();
   const { canCreate, canEdit, canDelete } = usePermissions();
-  const { user, userDepartment, userDepartments, effectiveDepartment, isDepartmentLocked, isAdmin, canViewHierarchy } = useAuth();
   const [search, setSearch] = useState('');
-  const [deptFilter, setDeptFilter] = useState('todos');
   const [turnoFilter, setTurnoFilter] = useState('todos');
   const [statusFilter, setStatusFilter] = useState('ATIVOS');
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
 
-  // Sincroniza filtro se houver departamento travado ou efetivo
-  useEffect(() => {
-    if (isDepartmentLocked && userDepartment) {
-      setDeptFilter(userDepartment);
-    } else if (effectiveDepartment) {
-      setDeptFilter(effectiveDepartment);
-    }
-  }, [isDepartmentLocked, userDepartment, effectiveDepartment]);
-
   // Reset página ao mudar filtros
-  useEffect(() => { setCurrentPage(1); }, [search, deptFilter, turnoFilter, statusFilter]);
+  useEffect(() => { setCurrentPage(1); }, [search, turnoFilter, statusFilter]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -96,9 +85,8 @@ export default function Colaboradores() {
   const PAGE_SIZE = 20;
   const [currentPage, setCurrentPage] = useState(1);
 
-  const initialDept = (isDepartmentLocked && userDepartment) ? userDepartment : '';
   const emptyForm = {
-    nome: '', email: '', cpf: '', telefone: '', cargo: '', departamento: initialDept,
+    nome: '', email: '', cpf: '', telefone: '', cargo: '', departamento: 'Contrato Porto',
     contrato_vinculado: '', frente_atendimento: '', polivalencia: '', status_colaborador: 'ATIVO',
     data_admissao: '', ultima_ferias: '', escolaridade: '', graduacao: '',
     pos_graduacao: false, pos_graduacao_tipo: '', turno: '', letra: '', encarregado_id: 'none',

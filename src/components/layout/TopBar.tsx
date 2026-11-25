@@ -37,7 +37,7 @@ export default function TopBar() {
     } catch { return new Set(); }
   });
   const { theme, setTheme } = useTheme();
-  const { user, signOut } = useAuth();
+  const { user, isAdmin, signOut } = useAuth();
   
   let userName = 'Usuário';
   if (user?.user_metadata?.full_name && typeof user.user_metadata.full_name === 'string') {
@@ -290,15 +290,11 @@ export default function TopBar() {
                 <p className="text-xs leading-none text-muted-foreground truncate">
                   {user?.email}
                 </p>
-                {userDepartment ? (
-                  <p className="text-[11px] font-medium text-primary mt-1 flex items-center gap-1">
-                    <Building2 className="w-3 h-3" /> {userDepartment}
-                  </p>
-                ) : isAdmin ? (
+                {isAdmin && (
                   <p className="text-[11px] font-medium text-muted-foreground mt-1 flex items-center gap-1">
-                    🌐 Acesso Geral (Admin)
+                    🌐 Administrador
                   </p>
-                ) : null}
+                )}
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
