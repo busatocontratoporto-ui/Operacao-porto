@@ -12,16 +12,18 @@ import {
   Calendar,
   ShieldCheck,
   UserCheck,
+  Plus,
+  Users,
 } from 'lucide-react';
 import busatoGlobo from '@/assets/busato-globo.png';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { FastInput } from '@/components/ui/fast-input';
-import { FastTextarea } from '@/components/ui/fast-textarea';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -61,6 +63,15 @@ interface ExternalContextResponse {
   link?: ExternalLinkMeta;
   colaboradores?: ColaboradorOption[];
   lancamentos?: ExternalLaunchRow[];
+}
+
+interface DraftEntry {
+  rowId: string;
+  employee_id: string;
+  date: string;
+  status: string;
+  observation: string;
+  error?: string;
 }
 
 const PONTO_STATUS_OPTIONS = [
@@ -114,6 +125,16 @@ function getOrCreateDeviceId(): string {
   }
 }
 
+function createDraftRow(defaultDate: string, employeeId = ''): DraftEntry {
+  return {
+    rowId: `row_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    employee_id: employeeId,
+    date: defaultDate,
+    status: 'falta_injustificada',
+    observation: '',
+  };
+}
+
 function formatDateBr(iso: string): string {
   if (!iso) return '—';
   const clean = iso.slice(0, 10);
@@ -127,6 +148,7 @@ export default function LancamentoPontoExterno() {
   const [deviceId] = useState<string>(() => getOrCreateDeviceId());
 
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [valid, setValid] = useState(false);
   const [invalidReason, setInvalidReason] = useState('');
@@ -141,16 +163,22 @@ export default function LancamentoPontoExterno() {
       return '';
     }
   });
-  const [employeeId, setEmployeeId] = useState('');
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [status, setStatus] = useState('falta_injustificada');
-  const [observation, setObservation] = useState('');
+  const [defaultDate, setDefaultDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [entries, setEntries] = useState<DraftEntry[]>(() => [
+    createDraftRow(new Date().toISOString().slice(0, 10)),
+  ]);
+
+  // Modal de seleção múltipla rápida
+  const [multiModalOpen, setMultiModalOpen] = useState(false);
+  const [multiSearch, setMultiSearch] = useState('');
+  const [multiSelectedIds, setMultiSelectedIds] = useState<Set<string>>(new Set());
 
   const [historySearch, setHistorySearch] = useState('');
   const [historyDateFilter, setHistoryDateFilter] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<ExternalLaunchRow | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  // IMPORTANTE: depende apenas de [token, deviceId] para NUNCA recarregar a página ao digitar nos campos!
   const loadContext = useCallback(
     async (silent = false) => {
       if (!token) {
@@ -159,7 +187,8 @@ export default function LancamentoPontoExterno() {
         setLoading(false);
         return;
       }
-      if (!silent) setLoading(true);
+      if (silent) setRefreshing(true);
+      else setLoading(true);
 
       const { data, error } = await supabase.rpc('get_external_ponto_context' as never, {
         p_token: token,
@@ -167,9 +196,12 @@ export default function LancamentoPontoExterno() {
       } as never);
 
       if (error || !data) {
-        setValid(false);
-        setInvalidReason('Não foi possível validar este link no momento. Verifique sua conexão.');
+        if (!silent) {
+          setValid(false);
+          setInvalidReason('Não foi possível validar este link no momento. Verifique sua conexão.');
+        }
         setLoading(false);
+        setRefreshing(false);
         return;
       }
 
@@ -178,6 +210,7 @@ export default function LancamentoPontoExterno() {
         setValid(false);
         setInvalidReason(res.reason || 'Link inválido ou desativado.');
         setLoading(false);
+        setRefreshing(false);
         return;
       }
 
@@ -186,33 +219,111 @@ export default function LancamentoPontoExterno() {
       setColaboradores(res.colaboradores || []);
       setLancamentos(res.lancamentos || []);
 
-      if (res.link?.responsavel_nome && !launcherName) {
-        setLauncherName(res.link.responsavel_nome);
+      if (res.link?.responsavel_nome) {
+        setLauncherName((prev) => prev || res.link!.responsavel_nome);
       }
+
       setLoading(false);
+      setRefreshing(false);
     },
-    [token, deviceId, launcherName]
+    [token, deviceId]
   );
 
   useEffect(() => {
-    loadContext();
+    loadContext(false);
   }, [loadContext]);
+
+  function updateEntry(rowId: string, patch: Partial<DraftEntry>) {
+    setEntries((prev) =>
+      prev.map((row) => (row.rowId === rowId ? { ...row, ...patch, error: undefined } : row))
+    );
+  }
+
+  function addEmptyRow() {
+    setEntries((prev) => [...prev, createDraftRow(defaultDate)]);
+  }
+
+  function removeRow(rowId: string) {
+    setEntries((prev) => {
+      if (prev.length <= 1) return [createDraftRow(defaultDate)];
+      return prev.filter((r) => r.rowId !== rowId);
+    });
+  }
+
+  function handleDefaultDateChange(nextDate: string) {
+    setDefaultDate(nextDate);
+    setEntries((prev) =>
+      prev.map((row) => ({
+        ...row,
+        date: row.date === defaultDate || !row.date ? nextDate : row.date,
+      }))
+    );
+  }
+
+  function openMultiSelectModal() {
+    setMultiSearch('');
+    setMultiSelectedIds(new Set());
+    setMultiModalOpen(true);
+  }
+
+  function toggleMultiSelectId(id: string) {
+    setMultiSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function confirmAddMultiSelected() {
+    if (multiSelectedIds.size === 0) {
+      setMultiModalOpen(false);
+      return;
+    }
+    const existingChosen = new Set(entries.map((e) => e.employee_id).filter(Boolean));
+    const newRows = Array.from(multiSelectedIds)
+      .filter((id) => !existingChosen.has(id))
+      .map((id) => createDraftRow(defaultDate, id));
+
+    setEntries((prev) => {
+      // Remove linhas completamente vazias antes de anexar os colaboradores selecionados
+      const nonEmpty = prev.filter((r) => r.employee_id);
+      const merged = [...nonEmpty, ...newRows];
+      return merged.length > 0 ? merged : [createDraftRow(defaultDate)];
+    });
+    setMultiModalOpen(false);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!token) return;
-    if (!employeeId) {
-      toast.error('Selecione o colaborador.');
-      return;
-    }
-    if (!date) {
-      toast.error('Informe a data do apontamento.');
-      return;
-    }
+
     const finalLauncher = (launcherName || linkMeta?.responsavel_nome || '').trim();
     if (!finalLauncher) {
-      toast.error('Informe seu nome (Responsável pelo lançamento).');
+      toast.error('Informe seu nome no campo Responsável pelo Lançamento.');
       return;
+    }
+
+    const validRows = entries.filter((r) => r.employee_id);
+    if (validRows.length === 0) {
+      toast.error('Selecione pelo menos um colaborador para lançar.');
+      return;
+    }
+
+    // Verifica duplicidade de mesmo colaborador + mesma data dentro do próprio lote
+    const seenKeys = new Set<string>();
+    for (const r of validRows) {
+      if (!r.date) {
+        toast.error('Informe a data para todos os colaboradores selecionados.');
+        return;
+      }
+      const key = `${r.employee_id}_${r.date}`;
+      if (seenKeys.has(key)) {
+        const colabName = colaboradores.find((c) => c.id === r.employee_id)?.nome || 'Colaborador';
+        toast.error(`${colabName} está repetido na mesma data (${formatDateBr(r.date)}).`);
+        return;
+      }
+      seenKeys.add(key);
     }
 
     setSubmitting(true);
@@ -222,33 +333,50 @@ export default function LancamentoPontoExterno() {
       // ignore
     }
 
-    const { data, error } = await supabase.rpc('submit_external_ponto' as never, {
-      p_token: token,
-      p_employee_id: employeeId,
-      p_date: date,
-      p_status: status,
-      p_observation: observation.trim(),
-      p_launched_by_name: finalLauncher,
-      p_device_id: deviceId,
-    } as never);
+    let successCount = 0;
+    const failedRows: DraftEntry[] = [];
+
+    for (const row of validRows) {
+      const { data, error } = await supabase.rpc('submit_external_ponto' as never, {
+        p_token: token,
+        p_employee_id: row.employee_id,
+        p_date: row.date,
+        p_status: row.status,
+        p_observation: row.observation.trim(),
+        p_launched_by_name: finalLauncher,
+        p_device_id: deviceId,
+      } as never);
+
+      if (error) {
+        failedRows.push({ ...row, error: error.message });
+        continue;
+      }
+
+      const res = data as unknown as { ok: boolean; error?: string };
+      if (!res?.ok) {
+        failedRows.push({ ...row, error: res?.error || 'Não foi possível salvar este lançamento.' });
+      } else {
+        successCount++;
+      }
+    }
 
     setSubmitting(false);
 
-    if (error) {
-      toast.error('Erro ao enviar lançamento: ' + error.message);
-      return;
+    if (successCount > 0) {
+      toast.success(
+        successCount === 1
+          ? '1 apontamento registrado com sucesso!'
+          : `${successCount} apontamentos registrados com sucesso!`
+      );
+      await loadContext(true);
     }
 
-    const res = data as unknown as { ok: boolean; error?: string };
-    if (!res?.ok) {
-      toast.error(res?.error || 'Não foi possível concluir o lançamento.');
-      return;
+    if (failedRows.length > 0) {
+      setEntries(failedRows);
+      toast.error(`${failedRows.length} lançamento(s) precisa(m) de atenção. Veja o aviso na linha abaixo.`);
+    } else {
+      setEntries([createDraftRow(defaultDate)]);
     }
-
-    toast.success('Apontamento registrado com sucesso!');
-    setEmployeeId('');
-    setObservation('');
-    await loadContext(true);
   }
 
   async function handleConfirmDelete() {
@@ -274,6 +402,17 @@ export default function LancamentoPontoExterno() {
     toast.success('Lançamento removido.');
     await loadContext(true);
   }
+
+  const filteredMultiList = useMemo(() => {
+    const q = multiSearch.trim().toLowerCase();
+    if (!q) return colaboradores;
+    return colaboradores.filter(
+      (c) =>
+        c.nome.toLowerCase().includes(q) ||
+        (c.cargo || '').toLowerCase().includes(q) ||
+        (c.letra || '').toLowerCase().includes(q)
+    );
+  }, [colaboradores, multiSearch]);
 
   const filteredHistory = useMemo(() => {
     const q = historySearch.trim().toLowerCase();
@@ -313,11 +452,13 @@ export default function LancamentoPontoExterno() {
     );
   }
 
+  const filledCount = entries.filter((e) => Boolean(e.employee_id)).length;
+
   return (
     <div className="min-h-screen bg-muted/20 text-foreground pb-14">
       {/* Standalone Top Header — Sem acesso ao sistema interno */}
       <header className="bg-card border-b border-border sticky top-0 z-20">
-        <div className="max-w-4xl mx-auto px-4 py-3.5 flex items-center justify-between gap-3">
+        <div className="max-w-5xl mx-auto px-4 py-3.5 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <img src={busatoGlobo} alt="Busato" className="w-9 h-9 shrink-0" />
             <div className="min-w-0">
@@ -330,94 +471,174 @@ export default function LancamentoPontoExterno() {
                 </Badge>
               </div>
               <p className="text-xs text-muted-foreground truncate">
-                Registre faltas, extras e banco de horas e acompanhe seus lançamentos abaixo
+                Lance um ou vários colaboradores definindo o tipo e o motivo de cada um separadamente
               </p>
             </div>
           </div>
 
-          <Button variant="outline" size="sm" onClick={() => loadContext()} className="shrink-0 text-xs">
-            <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Atualizar
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => loadContext(true)}
+            disabled={refreshing}
+            className="shrink-0 text-xs"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${refreshing ? 'animate-spin' : ''}`} /> Atualizar
           </Button>
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 pt-6 space-y-6">
-        {/* Card 1: Formulário de Lançamento */}
-        <form onSubmit={handleSubmit} className="bg-card rounded-2xl p-5 sm:p-6 border border-border shadow-sm space-y-4">
-          <div className="flex items-center justify-between border-b border-border/60 pb-3">
+      <main className="max-w-5xl mx-auto px-4 pt-6 space-y-6">
+        {/* Card 1: Formulário Multi-Colaborador */}
+        <form onSubmit={handleSubmit} className="bg-card rounded-2xl p-5 sm:p-6 border border-border shadow-sm space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60 pb-3">
             <div className="flex items-center gap-2">
               <Clock className="w-5 h-5 text-primary" />
-              <h2 className="font-bold text-base">Novo Apontamento de Ponto</h2>
+              <div>
+                <h2 className="font-bold text-base">Apontamento de Ponto (Individual ou em Lote)</h2>
+                <p className="text-xs text-muted-foreground">
+                  Adicione quantos colaboradores precisar e escolha o tipo e o motivo individual de cada um
+                </p>
+              </div>
             </div>
-            <span className="text-xs text-muted-foreground">{colaboradores.length} colaboradores ativos</span>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={openMultiSelectModal} className="text-xs">
+                <Users className="w-3.5 h-3.5 mr-1.5 text-primary" /> Selecionar Vários
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={addEmptyRow} className="text-xs">
+                <Plus className="w-3.5 h-3.5 mr-1.5" /> Adicionar Linha
+              </Button>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Cabeçalho comum: Responsável e Data Padrão */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-3.5 rounded-xl bg-muted/30 border border-border/60">
             <div className="space-y-1.5 sm:col-span-2">
               <Label className="text-xs font-semibold flex items-center gap-1.5">
-                <UserCheck className="w-3.5 h-3.5 text-primary" /> Responsável pelo Lançamento *
+                <UserCheck className="w-3.5 h-3.5 text-primary" /> Seu Nome (Responsável pelo Lançamento) *
               </Label>
-              <FastInput
+              <Input
                 value={launcherName}
-                onValueChange={setLauncherName}
+                onChange={(e) => setLauncherName(e.target.value)}
                 disabled={Boolean(linkMeta?.responsavel_nome)}
                 placeholder="Digite seu nome (Ex: Encarregado Agrimaldo)"
               />
             </div>
 
-            <div className="space-y-1.5 sm:col-span-2">
-              <Label className="text-xs font-semibold">Colaborador *</Label>
-              <ColaboradorSearchSelect
-                colaboradores={colaboradores}
-                value={employeeId}
-                onValueChange={setEmployeeId}
-                placeholder="Pesquisar colaborador por nome, função ou letra..."
-              />
-            </div>
-
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Data da Ocorrência *</Label>
-              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Tipo de Lançamento *</Label>
-              <Select value={status} onValueChange={setStatus}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PONTO_STATUS_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5 sm:col-span-2">
-              <Label className="text-xs font-semibold">Observação / Motivo / Equipamento</Label>
-              <FastTextarea
-                rows={2}
-                value={observation}
-                onValueChange={setObservation}
-                placeholder="Informe detalhes do turno, motivo da falta, cobertura de hora extra ou compensação..."
+              <Label className="text-xs font-semibold">Data Padrão das Linhas *</Label>
+              <Input
+                type="date"
+                value={defaultDate}
+                onChange={(e) => handleDefaultDateChange(e.target.value)}
               />
             </div>
           </div>
 
-          <Button type="submit" className="w-full h-11 font-bold text-sm" disabled={submitting}>
-            {submitting ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Registrando...
-              </>
-            ) : (
-              <>
-                <Send className="w-4 h-4 mr-2" /> Enviar Lançamento de Ponto
-              </>
-            )}
-          </Button>
+          {/* Linhas Individuais de Colaboradores */}
+          <div className="space-y-3">
+            {entries.map((row, idx) => (
+              <div
+                key={row.rowId}
+                className={`p-4 rounded-xl border transition-colors space-y-3 ${
+                  row.error ? 'bg-destructive/5 border-destructive/40' : 'bg-background border-border/80'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-primary">
+                    Colaborador #{idx + 1}
+                  </span>
+                  {entries.length > 1 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                      onClick={() => removeRow(row.rowId)}
+                    >
+                      <Trash2 className="w-3.5 h-3.5 mr-1" /> Remover linha
+                    </Button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                  <div className="space-y-1 md:col-span-5">
+                    <Label className="text-xs">Colaborador *</Label>
+                    <ColaboradorSearchSelect
+                      colaboradores={colaboradores}
+                      value={row.employee_id}
+                      onValueChange={(val) => updateEntry(row.rowId, { employee_id: val })}
+                      placeholder="Pesquisar nome, função ou letra..."
+                    />
+                  </div>
+
+                  <div className="space-y-1 md:col-span-3">
+                    <Label className="text-xs">Data *</Label>
+                    <Input
+                      type="date"
+                      value={row.date}
+                      onChange={(e) => updateEntry(row.rowId, { date: e.target.value })}
+                      className="h-10"
+                    />
+                  </div>
+
+                  <div className="space-y-1 md:col-span-4">
+                    <Label className="text-xs">Tipo de Apontamento *</Label>
+                    <Select
+                      value={row.status}
+                      onValueChange={(val) => updateEntry(row.rowId, { status: val })}
+                    >
+                      <SelectTrigger className="h-10">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PONTO_STATUS_OPTIONS.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1 md:col-span-12">
+                    <Label className="text-xs">Motivo / Justificativa Individual deste Colaborador</Label>
+                    <Input
+                      value={row.observation}
+                      onChange={(e) => updateEntry(row.rowId, { observation: e.target.value })}
+                      placeholder="Ex: Dobrou turno na Pipa / Falta sem aviso / Compensação autorizada / Atraso transporte..."
+                    />
+                  </div>
+                </div>
+
+                {row.error && (
+                  <div className="text-xs font-semibold text-destructive flex items-center gap-1.5 pt-1">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{row.error}</span>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-1">
+            <Button type="button" variant="outline" onClick={addEmptyRow} className="text-xs">
+              <Plus className="w-4 h-4 mr-1.5" /> + Adicionar Mais um Colaborador
+            </Button>
+
+            <Button type="submit" className="h-11 px-8 font-bold text-sm" disabled={submitting}>
+              {submitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Salvando Lançamentos...
+                </>
+              ) : (
+                <>
+                  <Send className="w-4 h-4 mr-2" /> Enviar {filledCount > 1 ? `${filledCount} Lançamentos` : 'Lançamento'}
+                </>
+              )}
+            </Button>
+          </div>
         </form>
 
         {/* Card 2: Histórico exclusivo do que esta pessoa/link lançou */}
@@ -452,7 +673,13 @@ export default function LancamentoPontoExterno() {
                 />
               </div>
               {historyDateFilter && (
-                <Button variant="ghost" size="sm" className="h-8 text-xs px-2" onClick={() => setHistoryDateFilter('')}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 text-xs px-2"
+                  onClick={() => setHistoryDateFilter('')}
+                >
                   Limpar
                 </Button>
               )}
@@ -461,7 +688,7 @@ export default function LancamentoPontoExterno() {
 
           {filteredHistory.length === 0 ? (
             <div className="text-center py-10 text-sm text-muted-foreground">
-              Nenhum lançamento encontrado ainda neste link. Assim que você registrar um ponto acima, ele aparecerá aqui imediatamente.
+              Nenhum lançamento encontrado ainda neste link. Assim que você registrar acima, ele aparecerá aqui imediatamente.
             </div>
           ) : (
             <div className="space-y-2.5">
@@ -487,7 +714,7 @@ export default function LancamentoPontoExterno() {
                     </p>
                     {item.observation && (
                       <p className="text-xs text-foreground/80 bg-background/80 rounded px-2.5 py-1 border border-border/50 mt-1">
-                        {item.observation}
+                        Motivo: {item.observation}
                       </p>
                     )}
                   </div>
@@ -509,6 +736,60 @@ export default function LancamentoPontoExterno() {
           )}
         </section>
       </main>
+
+      {/* Dialog: Selecionar Vários Colaboradores de Uma Vez */}
+      <Dialog open={multiModalOpen} onOpenChange={setMultiModalOpen}>
+        <DialogContent className="max-w-lg max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Selecionar Vários Colaboradores</DialogTitle>
+            <DialogDescription>
+              Marque os colaboradores desejados. Uma linha individual será criada para cada um escolher o tipo e o motivo separadamente.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="relative my-2">
+            <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+            <Input
+              value={multiSearch}
+              onChange={(e) => setMultiSearch(e.target.value)}
+              placeholder="Filtrar por nome, função ou letra..."
+              className="pl-9 h-9 text-xs"
+            />
+          </div>
+
+          <div className="flex-1 overflow-y-auto border border-border rounded-xl divide-y divide-border/50 max-h-80">
+            {filteredMultiList.map((c) => {
+              const checked = multiSelectedIds.has(c.id);
+              return (
+                <label
+                  key={c.id}
+                  className={`flex items-center gap-3 px-3.5 py-2.5 cursor-pointer hover:bg-muted/40 transition-colors ${
+                    checked ? 'bg-primary/5' : ''
+                  }`}
+                >
+                  <Checkbox checked={checked} onCheckedChange={() => toggleMultiSelectId(c.id)} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold text-foreground truncate">{c.nome}</p>
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      {c.cargo}
+                      {c.letra ? ` • Letra ${c.letra}` : ''}
+                    </p>
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center justify-between pt-2">
+            <span className="text-xs text-muted-foreground">
+              {multiSelectedIds.size} colaborador(es) marcado(s)
+            </span>
+            <Button type="button" onClick={confirmAddMultiSelected} disabled={multiSelectedIds.size === 0}>
+              Adicionar {multiSelectedIds.size > 0 ? `(${multiSelectedIds.size})` : ''}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
         <AlertDialogContent>

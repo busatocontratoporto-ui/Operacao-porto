@@ -155,12 +155,18 @@ export default function Ponto() {
   const pontoFileRef = useRef<HTMLInputElement>(null);
   const extrasFileRef = useRef<HTMLInputElement>(null);
 
-  const [form, setForm] = useState({
-    employee_id: '',
-    date: new Date().toISOString().slice(0, 10),
-    status: 'falta_injustificada',
-    observation: '',
-  });
+  const [batchDate, setBatchDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [batchRows, setBatchRows] = useState<
+    { rowId: string; employee_id: string; date: string; status: string; observation: string }[]
+  >(() => [
+    {
+      rowId: 'row_init',
+      employee_id: '',
+      date: new Date().toISOString().slice(0, 10),
+      status: 'falta_injustificada',
+      observation: '',
+    },
+  ]);
 
   const [warningForm, setWarningForm] = useState({
     employee_id: '',
@@ -395,69 +401,98 @@ export default function Ponto() {
   }, [filteredAttendance]);
 
   async function handleCreateAttendance() {
-    if (!form.employee_id || !form.date) {
-      toast.error('Selecione o colaborador e a data.');
+    const validRows = batchRows.filter((r) => r.employee_id && r.date);
+    if (validRows.length === 0) {
+      toast.error('Selecione pelo menos um colaborador e a data.');
       return;
     }
-    const statusToSave = form.status === 'falta_injustificada' ? 'falta' : form.status;
 
-    if (form.status === 'extra') {
-      const { count } = await supabase
-        .from('daily_attendance')
-        .select('*', { count: 'exact', head: true })
-        .eq('employee_id', form.employee_id)
-        .eq('status', 'extra')
-        .gte('date', period.start)
-        .lte('date', period.end);
+    let savedCount = 0;
+    const remainingRows: typeof batchRows = [];
 
-      if ((count || 0) >= 3) {
-        toast.error('⚠️ LIMITE ATINGIDO: Este colaborador já realizou 3 horas extras neste período.');
-        return;
+    for (const item of validRows) {
+      const statusToSave = item.status === 'falta_injustificada' ? 'falta' : item.status;
+
+      if (item.status === 'extra') {
+        const { count } = await supabase
+          .from('daily_attendance')
+          .select('*', { count: 'exact', head: true })
+          .eq('employee_id', item.employee_id)
+          .eq('status', 'extra')
+          .gte('date', period.start)
+          .lte('date', period.end);
+
+        if ((count || 0) >= 3) {
+          const empName = funcionarios.find((f) => f.id === item.employee_id)?.nome || 'Colaborador';
+          toast.error(`⚠️ LIMITE ATINGIDO: ${empName} já realizou 3 horas extras neste período.`);
+          remainingRows.push(item);
+          continue;
+        }
       }
-    }
 
-    const { error } = await supabase.from('daily_attendance').insert({
-      employee_id: form.employee_id,
-      date: form.date,
-      status: statusToSave,
-      observation: form.observation,
-    });
+      const { error } = await supabase.from('daily_attendance').insert({
+        employee_id: item.employee_id,
+        date: item.date,
+        status: statusToSave,
+        observation: item.observation.trim(),
+      });
 
-    if (error) {
-      if (error.code === '23505') toast.error('Já existe registro para este colaborador nesta data.');
-      else toast.error('Erro ao registrar ponto: ' + error.message);
-      return;
-    }
+      if (error) {
+        const empName = funcionarios.find((f) => f.id === item.employee_id)?.nome || 'Colaborador';
+        if (error.code === '23505') toast.error(`Já existe registro para ${empName} em ${formatDate(item.date)}.`);
+        else toast.error(`Erro ao registrar ${empName}: ${error.message}`);
+        remainingRows.push(item);
+        continue;
+      }
 
-    if (form.status === 'extra') {
-      const { data: existing } = await supabase
-        .from('overtime_control')
-        .select('*')
-        .eq('employee_id', form.employee_id)
-        .eq('period_start', period.start)
-        .eq('period_end', period.end)
-        .maybeSingle();
-
-      if (existing) {
-        await supabase
+      if (item.status === 'extra') {
+        const { data: existing } = await supabase
           .from('overtime_control')
-          .update({ extras_count: (existing as { extras_count: number; id: string }).extras_count + 1, updated_at: new Date().toISOString() })
-          .eq('id', (existing as { extras_count: number; id: string }).id);
-      } else {
-        await supabase.from('overtime_control').insert({
-          employee_id: form.employee_id,
-          period_start: period.start,
-          period_end: period.end,
-          extras_count: 1,
-          max_extras: 3,
-        });
+          .select('*')
+          .eq('employee_id', item.employee_id)
+          .eq('period_start', period.start)
+          .eq('period_end', period.end)
+          .maybeSingle();
+
+        if (existing) {
+          await supabase
+            .from('overtime_control')
+            .update({
+              extras_count: (existing as { extras_count: number; id: string }).extras_count + 1,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', (existing as { extras_count: number; id: string }).id);
+        } else {
+          await supabase.from('overtime_control').insert({
+            employee_id: item.employee_id,
+            period_start: period.start,
+            period_end: period.end,
+            extras_count: 1,
+            max_extras: 3,
+          });
+        }
       }
+
+      savedCount++;
     }
 
-    setDialogOpen(false);
-    setForm({ employee_id: '', date: new Date().toISOString().slice(0, 10), status: 'falta_injustificada', observation: '' });
-    toast.success('Apontamento registrado com sucesso!');
-    fetchAll();
+    if (savedCount > 0) {
+      toast.success(
+        savedCount === 1 ? 'Apontamento registrado com sucesso!' : `${savedCount} apontamentos registrados com sucesso!`
+      );
+      fetchAll();
+    }
+
+    if (remainingRows.length > 0) {
+      setBatchRows(remainingRows);
+    } else {
+      const today = new Date().toISOString().slice(0, 10);
+      setBatchDate(today);
+      setBatchRows([
+        { rowId: `row_${Date.now()}`, employee_id: '', date: today, status: 'falta_injustificada', observation: '' },
+      ]);
+      setDialogOpen(false);
+    }
   }
 
   async function handleCreateWarning() {
@@ -990,45 +1025,137 @@ export default function Ponto() {
         </TabsContent>
       </Tabs>
 
-      {/* Dialog: Lançar Ponto */}
+      {/* Dialog: Lançar Ponto (Individual ou Múltiplos Colaboradores) */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Lançar Ponto / Frequência</DialogTitle>
-            <DialogDescription>Registre falta, hora extra, banco de horas ou abono do colaborador.</DialogDescription>
+            <DialogDescription>
+              Registre um ou vários colaboradores de uma só vez, escolhendo o tipo e o motivo de cada um separadamente.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 pt-2">
-            <div className="space-y-1.5">
-              <Label>Colaborador *</Label>
-              <ColaboradorSearchSelect
-                colaboradores={funcionarios}
-                value={form.employee_id}
-                onValueChange={(v) => setForm({ ...form, employee_id: v })}
-                placeholder="Pesquisar colaborador por nome, função ou letra..."
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Data *</Label>
-                <Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
+            <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-muted/30 border border-border/60">
+              <div className="flex items-center gap-2">
+                <Label className="text-xs font-semibold whitespace-nowrap">Data Padrão:</Label>
+                <Input
+                  type="date"
+                  value={batchDate}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setBatchDate(next);
+                    setBatchRows((prev) =>
+                      prev.map((r) => ({ ...r, date: r.date === batchDate || !r.date ? next : r.date }))
+                    );
+                  }}
+                  className="h-8 text-xs w-40"
+                />
               </div>
-              <div className="space-y-1.5">
-                <Label>Tipo de Apontamento *</Label>
-                <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {PONTO_STATUS_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs"
+                onClick={() =>
+                  setBatchRows((prev) => [
+                    ...prev,
+                    {
+                      rowId: `row_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                      employee_id: '',
+                      date: batchDate,
+                      status: 'falta_injustificada',
+                      observation: '',
+                    },
+                  ])
+                }
+              >
+                <Plus className="w-3.5 h-3.5 mr-1" /> Adicionar Colaborador
+              </Button>
             </div>
-            <div className="space-y-1.5">
-              <Label>Observação / Justificativa</Label>
-              <FastTextarea value={form.observation} onValueChange={(v) => setForm((p) => ({ ...p, observation: v }))} rows={3} placeholder="Detalhes do apontamento, compensação de banco de horas, etc." />
+
+            <div className="space-y-3">
+              {batchRows.map((row, idx) => (
+                <div key={row.rowId} className="p-3.5 rounded-xl border border-border bg-card space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-primary uppercase">Colaborador #{idx + 1}</span>
+                    {batchRows.length > 1 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-xs text-destructive"
+                        onClick={() => setBatchRows((prev) => prev.filter((r) => r.rowId !== row.rowId))}
+                      >
+                        <Trash2 className="w-3.5 h-3.5 mr-1" /> Remover
+                      </Button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+                    <div className="sm:col-span-5 space-y-1">
+                      <Label className="text-xs">Colaborador *</Label>
+                      <ColaboradorSearchSelect
+                        colaboradores={funcionarios}
+                        value={row.employee_id}
+                        onValueChange={(v) =>
+                          setBatchRows((prev) => prev.map((r) => (r.rowId === row.rowId ? { ...r, employee_id: v } : r)))
+                        }
+                        placeholder="Pesquisar nome, função ou letra..."
+                      />
+                    </div>
+                    <div className="sm:col-span-3 space-y-1">
+                      <Label className="text-xs">Data *</Label>
+                      <Input
+                        type="date"
+                        value={row.date}
+                        onChange={(e) =>
+                          setBatchRows((prev) =>
+                            prev.map((r) => (r.rowId === row.rowId ? { ...r, date: e.target.value } : r))
+                          )
+                        }
+                        className="h-10"
+                      />
+                    </div>
+                    <div className="sm:col-span-4 space-y-1">
+                      <Label className="text-xs">Tipo de Apontamento *</Label>
+                      <Select
+                        value={row.status}
+                        onValueChange={(v) =>
+                          setBatchRows((prev) => prev.map((r) => (r.rowId === row.rowId ? { ...r, status: v } : r)))
+                        }
+                      >
+                        <SelectTrigger className="h-10">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {PONTO_STATUS_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="sm:col-span-12 space-y-1">
+                      <Label className="text-xs">Motivo / Justificativa Individual</Label>
+                      <Input
+                        value={row.observation}
+                        onChange={(e) =>
+                          setBatchRows((prev) =>
+                            prev.map((r) => (r.rowId === row.rowId ? { ...r, observation: e.target.value } : r))
+                          )
+                        }
+                        placeholder="Motivo específico deste colaborador..."
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
-            <Button className="w-full" onClick={handleCreateAttendance}>Salvar Apontamento</Button>
+
+            <Button className="w-full" onClick={handleCreateAttendance}>
+              Salvar {batchRows.filter((r) => r.employee_id).length > 1 ? `${batchRows.filter((r) => r.employee_id).length} Apontamentos` : 'Apontamento'}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
