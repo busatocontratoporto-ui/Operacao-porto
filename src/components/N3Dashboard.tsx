@@ -164,6 +164,7 @@ interface ColaboradorComboboxProps {
 function ColaboradorCombobox({ value, funcionariosList, onChange }: ColaboradorComboboxProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState(value || '');
+  const [onlyTstAndLeaders, setOnlyTstAndLeaders] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -175,7 +176,6 @@ function ColaboradorCombobox({ value, funcionariosList, onChange }: ColaboradorC
     const handleClickOutside = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setOpen(false);
-        // Se o texto digitado não corresponde ao valor salvo, restaura
         if (query !== value) setQuery(value || '');
       }
     };
@@ -183,9 +183,18 @@ function ColaboradorCombobox({ value, funcionariosList, onChange }: ColaboradorC
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [query, value]);
 
-  const filtered = funcionariosList.filter(f =>
-    !query || f.nome.toLowerCase().includes(query.toLowerCase())
-  ).slice(0, 20);
+  const pool = useMemo(() => {
+    if (!onlyTstAndLeaders) return funcionariosList;
+    const roleFiltered = funcionariosList.filter((f) => {
+      const c = (f.cargo || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      return /seguranca|tst|ssma|supervisor|encarregad|coordenad|gerente/.test(c);
+    });
+    return roleFiltered.length > 0 ? roleFiltered : funcionariosList;
+  }, [funcionariosList, onlyTstAndLeaders]);
+
+  const filtered = pool.filter(f =>
+    !query || f.nome.toLowerCase().includes(query.toLowerCase()) || (f.cargo || '').toLowerCase().includes(query.toLowerCase())
+  ).slice(0, 25);
 
   const handleSelect = useCallback((nome: string) => {
     onChange(nome);
@@ -195,7 +204,6 @@ function ColaboradorCombobox({ value, funcionariosList, onChange }: ColaboradorC
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
-      // Se não há filtro ou o texto não bate com nenhuma opção, aceita como valor livre
       if (filtered.length > 0) {
         handleSelect(filtered[0].nome);
       } else {
@@ -214,7 +222,7 @@ function ColaboradorCombobox({ value, funcionariosList, onChange }: ColaboradorC
         ref={inputRef}
         type="text"
         value={query}
-        placeholder="Buscar colaborador..."
+        placeholder="Selecionar TST / Líder..."
         autoComplete="off"
         className="flex h-8 w-full rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1 text-xs font-semibold text-slate-800 dark:text-slate-200 shadow-sm transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
         onChange={e => { setQuery(e.target.value); setOpen(true); onChange(e.target.value); }}
@@ -222,7 +230,22 @@ function ColaboradorCombobox({ value, funcionariosList, onChange }: ColaboradorC
         onKeyDown={handleKeyDown}
       />
       {open && (
-        <div className="absolute z-50 mt-1 w-full max-h-52 overflow-y-auto rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg text-xs">
+        <div className="absolute z-50 mt-1 w-72 max-h-60 overflow-y-auto rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg text-xs">
+          <div className="px-2.5 py-1.5 bg-muted/40 border-b border-border flex items-center justify-between text-[10px]">
+            <span className="font-semibold text-primary">
+              {onlyTstAndLeaders ? 'TST & Liderança' : 'Todos os Colaboradores'}
+            </span>
+            <button
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                setOnlyTstAndLeaders((v) => !v);
+              }}
+              className="underline font-semibold text-muted-foreground hover:text-foreground"
+            >
+              {onlyTstAndLeaders ? 'Ver todos' : 'Filtrar TST/Líder'}
+            </button>
+          </div>
           {filtered.length === 0 ? (
             <div className="px-3 py-2 text-muted-foreground italic">Nenhum colaborador encontrado</div>
           ) : (
@@ -232,8 +255,8 @@ function ColaboradorCombobox({ value, funcionariosList, onChange }: ColaboradorC
                 className={`px-3 py-1.5 cursor-pointer hover:bg-primary/10 font-medium ${f.nome === value ? 'bg-primary/5 text-primary' : 'text-slate-800 dark:text-slate-200'}`}
                 onMouseDown={e => { e.preventDefault(); handleSelect(f.nome); }}
               >
-                {f.nome}
-                {f.cargo && <span className="ml-2 text-[10px] text-muted-foreground font-normal">{f.cargo}</span>}
+                <div>{f.nome}</div>
+                {f.cargo && <div className="text-[10px] text-muted-foreground font-normal">{f.cargo}{f.letra ? ` • Letra ${f.letra}` : ''}</div>}
               </div>
             ))
           )}
@@ -553,8 +576,13 @@ export default function N3Dashboard({ globalPeriod }: N3DashboardProps) {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const { data: emps } = await supabase.from('funcionarios').select('id, nome, cargo, letra, turno').order('nome');
-      const list = emps || [];
+      const { data: emps } = await supabase
+        .from('funcionarios')
+        .select('id, nome, cargo, letra, turno, status_colaborador')
+        .order('nome');
+      const list = ((emps || []) as (FuncItem & { status_colaborador?: string | null })[]).filter(
+        (e) => (e.status_colaborador || 'ATIVO').toUpperCase() !== 'DESLIGADO'
+      );
       setFuncionariosList(list);
       
       const cargoMap = list.reduce((acc: Record<string, string>, e: FuncItem) => {
@@ -641,12 +669,24 @@ export default function N3Dashboard({ globalPeriod }: N3DashboardProps) {
   };
 
   const initMockData = (cargoMap: Record<string, string> = {}, list: FuncItem[] = []) => {
+    const registeredTsts = list.filter((f) => {
+      const c = (f.cargo || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      return /seguranca|tst|supervisor/.test(c);
+    });
+    const seedSource = registeredTsts.length > 0
+      ? registeredTsts.map((f) => ({
+          nome: f.nome,
+          cargo: f.cargo || 'Técnico de Segurança',
+          letra: f.turno === 'adm' ? 'ADM' : f.letra ? (f.turno?.toLowerCase().includes('noite') ? `${f.letra} Noite` : `${f.letra} Dia`) : 'ADM',
+        }))
+      : DEFAULT_NAMES;
+
     setData(
-      DEFAULT_NAMES.map(colab => {
+      seedSource.map(colab => {
         const found = findBestFuncionario(colab.nome, list);
         const nomeFinal = found ? found.nome : colab.nome;
         const cargoFinal = found?.cargo || colab.cargo || cargoMap[nomeFinal.toUpperCase().trim()] || '';
-        const letraFinal = found?.letra ? (found.turno?.toLowerCase().includes('noite') ? `${found.letra} Noite` : found.turno?.toLowerCase().includes('dia') ? `${found.letra} Dia` : found.letra) : colab.letra;
+        const letraFinal = found?.letra ? (found.turno?.toLowerCase().includes('noite') ? `${found.letra} Noite` : found.turno?.toLowerCase().includes('dia') ? `${found.letra} Dia` : found.letra) : (found?.turno === 'adm' ? 'ADM' : colab.letra);
 
         return {
           id: Math.random().toString(36).substring(2, 9),

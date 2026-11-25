@@ -27,7 +27,7 @@ import {
 import { readExcelRows, parseExcelDate, writeExcelFile } from '@/lib/excel';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAuth } from '@/contexts/AuthContext';
-import { ColaboradorSearchSelect } from '@/components/colaboradores/ColaboradorSearchSelect';
+import { ColaboradorSearchSelect, ColaboradorNameSelect } from '@/components/colaboradores/ColaboradorSearchSelect';
 
 interface Attendance {
   id: string;
@@ -1233,12 +1233,15 @@ export default function Ponto() {
                   />
                 </div>
                 <div className="space-y-1 min-w-0">
-                  <Label className="text-xs">Responsável (Opcional)</Label>
-                  <Input
+                  <Label className="text-xs">Encarregado / Responsável (Opcional)</Label>
+                  <ColaboradorNameSelect
+                    colaboradores={funcionarios}
+                    roleFilter="encarregado"
                     value={newLinkForm.responsavel_nome}
-                    onChange={(e) => setNewLinkForm({ ...newLinkForm, responsavel_nome: e.target.value })}
-                    placeholder="Ex: Agrimaldo (ou vazio p/ geral)"
-                    className="h-9 text-xs"
+                    onValueChange={(v) => setNewLinkForm({ ...newLinkForm, responsavel_nome: v })}
+                    placeholder="Selecionar encarregado (ou vazio p/ geral)"
+                    allowClear
+                    allowCustom
                   />
                 </div>
               </div>

@@ -25,6 +25,8 @@ import { ExpandableChart } from '@/components/ui/ExpandableChart';
 import { TreinamentosSSMA } from '@/components/TreinamentosSSMA';
 import N3Dashboard from '@/components/N3Dashboard';
 import { usePermissions } from '@/hooks/usePermissions';
+import { ColaboradorNameSelect, turnoToEventShift } from '@/components/colaboradores/ColaboradorSearchSelect';
+import { fetchCadastros } from '@/lib/busato-service';
 
 interface EventRow {
   id: string;
@@ -93,7 +95,8 @@ export default function Eventos() {
   const { canCreate, canEdit, canDelete } = usePermissions();
   const [activeTab, setActiveTab] = useState("visao-geral");
   const [events, setEvents] = useState<EventRow[]>([]);
-  const [funcionarios, setFuncionarios] = useState<{ id: string; nome: string; cargo: string; departamento: string; foto_url: string }[]>([]);
+  const [funcionarios, setFuncionarios] = useState<{ id: string; nome: string; cargo: string; departamento: string; foto_url: string; turno?: string; letra?: string; frente_atendimento?: string | null; status_colaborador?: string | null }[]>([]);
+  const [fleetPlates, setFleetPlates] = useState<{ placa: string; tipoEquipamento: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [isImporting, setIsImporting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -188,10 +191,15 @@ export default function Eventos() {
   const [selectedEmployee, setSelectedEmployee] = useState<{ id: string; nome: string; cargo: string; departamento: string; foto_url: string } | null>(null);
   const [showEmpDropdown, setShowEmpDropdown] = useState(false);
 
+  const activeColaboradores = useMemo(
+    () => funcionarios.filter((f) => (f.status_colaborador || 'ATIVO').toUpperCase() !== 'DESLIGADO'),
+    [funcionarios]
+  );
+
   const filteredSearchEmps = useMemo(() => {
     if (!employeeSearch.trim()) return [];
-    return funcionarios.filter(f => f.nome.toLowerCase().includes(employeeSearch.toLowerCase())).slice(0, 8);
-  }, [employeeSearch, funcionarios]);
+    return activeColaboradores.filter(f => f.nome.toLowerCase().includes(employeeSearch.toLowerCase())).slice(0, 8);
+  }, [employeeSearch, activeColaboradores]);
 
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const activeFiltersCount = (equipmentFilter !== 'all' ? 1 : 0) + (locationFilter !== 'all' ? 1 : 0) + (plateFilter !== 'all' ? 1 : 0) + (timeFilter !== 'all' ? 1 : 0) + (selectedEmployee ? 1 : 0);
@@ -267,9 +275,10 @@ export default function Eventos() {
     let supabaseOk = false;
 
     try {
-      const [evtRes, fRes] = await Promise.all([
+      const [evtRes, fRes, cadRes] = await Promise.all([
         supabase.from('events').select('*').gte('event_date', period.start).lte('event_date', period.end).order('event_date', { ascending: false }),
-        supabase.from('funcionarios').select('id, nome, cargo, departamento, foto_url').order('nome'),
+        supabase.from('funcionarios').select('id, nome, cargo, departamento, foto_url, turno, letra, frente_atendimento, status_colaborador').order('nome'),
+        fetchCadastros().catch(() => null),
       ]);
       if (!evtRes.error) {
         // Supabase respondeu com sucesso (mesmo que vazio)
@@ -277,6 +286,19 @@ export default function Eventos() {
         evtData = (evtRes.data || []) as EventRow[];
       }
       fData = (fRes.data || []) as typeof fData;
+      if (cadRes?.equipamentos) {
+        const seenPlates = new Set<string>();
+        const platesList: { placa: string; tipoEquipamento: string }[] = [];
+        for (const eq of cadRes.equipamentos) {
+          const pl = String(eq.placa || '').trim().toUpperCase();
+          if (pl && pl !== 'S/PLACA' && !seenPlates.has(pl)) {
+            seenPlates.add(pl);
+            platesList.push({ placa: pl, tipoEquipamento: String(eq.tipoEquipamento || eq.nome || '').trim().toUpperCase() });
+          }
+        }
+        platesList.sort((a, b) => a.placa.localeCompare(b.placa));
+        setFleetPlates(platesList);
+      }
     } catch (e) {
       console.error(e);
     }
@@ -1255,7 +1277,20 @@ export default function Eventos() {
                 </div>
                 <div className="space-y-2">
                   <Label>Nome do Envolvido *</Label>
-                  <FastInput value={newEvent.involved_name} onValueChange={v => setNewEvent(p => ({ ...p, involved_name: v }))} placeholder="Nome completo" />
+                  <ColaboradorNameSelect
+                    colaboradores={activeColaboradores}
+                    value={newEvent.involved_name}
+                    onValueChange={(nome, colab) => {
+                      const autoShift = colab ? turnoToEventShift(colab.turno, colab.letra) : '';
+                      setNewEvent(p => ({
+                        ...p,
+                        involved_name: nome,
+                        shift: p.shift || autoShift,
+                      }));
+                    }}
+                    placeholder="Selecionar colaborador envolvido..."
+                    allowCustom
+                  />
                 </div>
 
                 <div className="space-y-2">
@@ -1295,35 +1330,95 @@ export default function Eventos() {
                 {(newEvent.shift === 'A Noite' || newEvent.shift === 'B Noite') ? (
                   <div className="space-y-2 md:col-span-2">
                     <Label>Encarregado</Label>
-                    <FastInput value={newEvent.supervisor1} onValueChange={v => setNewEvent(p => ({ ...p, supervisor1: v, supervisor2: '' }))} placeholder="Nome do Encarregado" />
+                    <ColaboradorNameSelect
+                      colaboradores={activeColaboradores}
+                      roleFilter="encarregado"
+                      value={newEvent.supervisor1}
+                      onValueChange={v => setNewEvent(p => ({ ...p, supervisor1: v, supervisor2: '' }))}
+                      placeholder="Selecionar encarregado cadastrado..."
+                      allowClear
+                      allowCustom
+                    />
                   </div>
                 ) : (
                   <>
                     <div className="space-y-2">
                       <Label>Encarregado 1</Label>
-                      <FastInput value={newEvent.supervisor1} onValueChange={v => setNewEvent(p => ({ ...p, supervisor1: v }))} placeholder="Nome do 1º Encarregado" />
+                      <ColaboradorNameSelect
+                        colaboradores={activeColaboradores}
+                        roleFilter="encarregado"
+                        value={newEvent.supervisor1}
+                        onValueChange={v => setNewEvent(p => ({ ...p, supervisor1: v }))}
+                        placeholder="Selecionar 1º Encarregado..."
+                        allowClear
+                        allowCustom
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label>Encarregado 2</Label>
-                      <FastInput value={newEvent.supervisor2} onValueChange={v => setNewEvent(p => ({ ...p, supervisor2: v }))} placeholder="Nome do 2º Encarregado" />
+                      <ColaboradorNameSelect
+                        colaboradores={activeColaboradores}
+                        roleFilter="encarregado"
+                        value={newEvent.supervisor2}
+                        onValueChange={v => setNewEvent(p => ({ ...p, supervisor2: v }))}
+                        placeholder="Selecionar 2º Encarregado..."
+                        allowClear
+                        allowCustom
+                      />
                     </div>
                   </>
                 )}
                 <div className="space-y-2 md:col-span-2">
                   <Label>Técnico de Segurança</Label>
-                  <FastInput value={newEvent.tecnico_seguranca} onValueChange={v => setNewEvent(p => ({ ...p, tecnico_seguranca: v }))} placeholder="Nome do TST responsável" />
+                  <ColaboradorNameSelect
+                    colaboradores={activeColaboradores}
+                    roleFilter="tst"
+                    value={newEvent.tecnico_seguranca}
+                    onValueChange={v => setNewEvent(p => ({ ...p, tecnico_seguranca: v }))}
+                    placeholder="Selecionar Técnico de Segurança (TST)..."
+                    allowClear
+                    allowCustom
+                  />
                 </div>
 
                 {/* Conditional Fields: Material */}
                 {newEvent.categoria_evento === 'Material' && (
                   <>
                     <div className="space-y-2">
-                      <Label>Equipamento</Label>
-                      <FastInput value={newEvent.equipment} onValueChange={v => setNewEvent(p => ({ ...p, equipment: v }))} placeholder="Ex: CAMINHÃO PIPA" />
+                      <Label>Placa/TAG</Label>
+                      <Input
+                        list="ssma-fleet-plates"
+                        value={newEvent.plate_tag}
+                        onChange={e => {
+                          const val = e.target.value.toUpperCase();
+                          const matchedEq = fleetPlates.find(fp => fp.placa === val.trim());
+                          setNewEvent(p => ({
+                            ...p,
+                            plate_tag: val,
+                            equipment: matchedEq?.tipoEquipamento || p.equipment,
+                          }));
+                        }}
+                        placeholder="Selecione ou digite a Placa/TAG"
+                      />
+                      <datalist id="ssma-fleet-plates">
+                        {fleetPlates.map(fp => (
+                          <option key={fp.placa} value={fp.placa}>{fp.tipoEquipamento}</option>
+                        ))}
+                      </datalist>
                     </div>
                     <div className="space-y-2">
-                      <Label>Placa/TAG</Label>
-                      <FastInput value={newEvent.plate_tag} onValueChange={v => setNewEvent(p => ({ ...p, plate_tag: v }))} placeholder="Ex: QRD0980" />
+                      <Label>Equipamento</Label>
+                      <Input
+                        list="ssma-fleet-types"
+                        value={newEvent.equipment}
+                        onChange={e => setNewEvent(p => ({ ...p, equipment: e.target.value.toUpperCase() }))}
+                        placeholder="Ex: CAMINHÃO PIPA"
+                      />
+                      <datalist id="ssma-fleet-types">
+                        {Array.from(new Set(fleetPlates.map(fp => fp.tipoEquipamento).filter(Boolean))).map(tp => (
+                          <option key={tp} value={tp} />
+                        ))}
+                      </datalist>
                     </div>
                     <div className="space-y-2 md:col-span-2">
                       <div className="flex items-center gap-2 mt-2">
@@ -1463,7 +1558,7 @@ export default function Eventos() {
                           )}
                           <div className="min-w-0">
                             <p className="text-sm font-medium truncate">{f.nome}</p>
-                            <p className="text-[10px] text-muted-foreground">{f.cargo} · {f.departamento}</p>
+                            <p className="text-[10px] text-muted-foreground">{f.cargo}{f.letra ? ` · Letra ${f.letra}` : ''}</p>
                           </div>
                         </button>
                       ))}
@@ -1517,7 +1612,7 @@ export default function Eventos() {
           )}
           <div className="flex-1 min-w-0">
             <p className="font-bold text-foreground">{selectedEmployee.nome}</p>
-            <p className="text-sm text-muted-foreground">{selectedEmployee.cargo} · {selectedEmployee.departamento}</p>
+            <p className="text-sm text-muted-foreground">{selectedEmployee.cargo}</p>
           </div>
           <button onClick={() => navigate(`/funcionario/${selectedEmployee.id}`)} className="flex items-center gap-1.5 text-xs text-primary hover:underline font-medium shrink-0">
             <Eye className="w-3.5 h-3.5" /> Ver Perfil

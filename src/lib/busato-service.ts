@@ -568,6 +568,52 @@ async function ensureMemoryStore(): Promise<{
         justificativas: [],
       };
     }
+
+    // Sincroniza automaticamente os colaboradores ativos de public.funcionarios na lista de operadores do CCO
+    try {
+      const { data: funcs } = await supabase
+        .from("funcionarios")
+        .select("nome, cargo, turno, letra, frente_atendimento, status_colaborador")
+        .order("nome");
+
+      if (funcs && funcs.length > 0 && memoryCadastros) {
+        const existingNames = new Set(
+          (memoryCadastros.operadores || []).map((o: any) =>
+            String(o.nome || "").trim().toUpperCase()
+          )
+        );
+        let maxOpId = (memoryCadastros.operadores || []).reduce(
+          (m: number, o: any) => Math.max(m, Number(o.id) || 0),
+          0
+        );
+
+        for (const f of funcs as any[]) {
+          const st = String(f.status_colaborador || "ATIVO").toUpperCase();
+          if (st === "DESLIGADO") continue;
+          const cleanName = String(f.nome || "").trim().toUpperCase();
+          if (!cleanName || existingNames.has(cleanName)) continue;
+
+          const cargoLower = String(f.cargo || "").toLowerCase();
+          const isOperacional =
+            cargoLower.includes("motorista") ||
+            cargoLower.includes("operador") ||
+            cargoLower.includes("ajudante") ||
+            cargoLower.includes("encarregado");
+          if (!isOperacional) continue;
+
+          existingNames.add(cleanName);
+          memoryCadastros.operadores.push({
+            id: ++maxOpId,
+            nome: cleanName,
+            funcao: f.cargo || "Operador",
+            letra: f.letra || (String(f.turno || "").endsWith("_a") ? "A" : String(f.turno || "").endsWith("_b") ? "B" : "ADM"),
+            turno: String(f.turno || "").includes("noite") ? "NOITE" : "DIA",
+            equipamentoHabitual: f.frente_atendimento || "",
+            status: st === "AFASTADO" ? "INATIVO" : "ATIVO",
+          });
+        }
+      }
+    } catch {}
   }
 
   return { registros: memoryRegistros!, cadastros: memoryCadastros! };

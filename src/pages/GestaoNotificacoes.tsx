@@ -16,6 +16,8 @@ import PeriodFilter, { getMonthPeriod } from '@/components/filters/PeriodFilter'
 import type { PeriodRange } from '@/components/filters/PeriodFilter';
 import ExpandableChart from '@/components/ExpandableChart';
 import { usePermissions } from '@/hooks/usePermissions';
+import { supabase } from '@/integrations/supabase/client';
+import { ColaboradorNameSelect, type ColaboradorOption } from '@/components/colaboradores/ColaboradorSearchSelect';
 
 export interface NotificacaoGlobal {
   id: string;
@@ -72,6 +74,7 @@ const getMonthForNotification = (dataStr?: string) => {
 const GestaoNotificacoes = () => {
   const { canCreate, canEdit, canDelete } = usePermissions();
   const [notificacoes, setNotificacoes] = useState<NotificacaoGlobal[]>([]);
+  const [colaboradores, setColaboradores] = useState<ColaboradorOption[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -90,6 +93,17 @@ const GestaoNotificacoes = () => {
   });
 
   useEffect(() => {
+    supabase
+      .from('funcionarios')
+      .select('id, nome, cargo, turno, letra, status_colaborador')
+      .order('nome')
+      .then(({ data }) => {
+        const active = ((data || []) as (ColaboradorOption & { status_colaborador?: string | null })[]).filter(
+          (f) => (f.status_colaborador || 'ATIVO').toUpperCase() !== 'DESLIGADO'
+        );
+        setColaboradores(active);
+      });
+
     const saved = localStorage.getItem('corporate_cheerleader_notificacoes_globais');
     if (saved) {
       try {
@@ -455,11 +469,33 @@ const GestaoNotificacoes = () => {
             </div>
             <div className="space-y-2">
               <Label>Local</Label>
-              <Input placeholder="Ex: Minério" value={formData.local} onChange={e => setFormData({ ...formData, local: e.target.value })} />
+              <Select value={formData.local || 'Minério'} onValueChange={v => setFormData({ ...formData, local: v })}>
+                <SelectTrigger><SelectValue placeholder="Selecione o local" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Minério">Minério (Geral)</SelectItem>
+                  <SelectItem value="TPM">TPM (Geral)</SelectItem>
+                  <SelectItem value="Área Velha (Minério)">Área Velha (Minério)</SelectItem>
+                  <SelectItem value="Área Nova (Minério)">Área Nova (Minério)</SelectItem>
+                  <SelectItem value="Rota AMT (Minério)">Rota AMT (Minério)</SelectItem>
+                  <SelectItem value="Virador de Vagões (Minério)">Virador de Vagões</SelectItem>
+                  <SelectItem value="Píer">Píer</SelectItem>
+                  <SelectItem value="Pátios (TPM)">Pátios (TPM)</SelectItem>
+                  <SelectItem value="Silo (TPM)">Silo (TPM)</SelectItem>
+                  <SelectItem value="Base">Base / Apoio</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
-              <Label>Solicitante</Label>
-              <Input placeholder="Nome" value={formData.solicitante} onChange={e => setFormData({ ...formData, solicitante: e.target.value })} />
+              <Label>Responsável / Solicitante</Label>
+              <ColaboradorNameSelect
+                colaboradores={colaboradores}
+                roleFilter="encarregado"
+                value={formData.solicitante || ''}
+                onValueChange={v => setFormData({ ...formData, solicitante: v })}
+                placeholder="Selecionar ou digitar..."
+                allowClear
+                allowCustom
+              />
             </div>
             
             <div className="space-y-2 col-span-2 md:col-span-3">

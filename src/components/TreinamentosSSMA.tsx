@@ -1,16 +1,18 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Target, Upload, Pencil, Trash2, ShieldAlert } from 'lucide-react';
-import { ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Tooltip, Legend } from 'recharts';
+import { Target, Upload, Pencil, Trash2, ShieldAlert, Plus } from 'lucide-react';
+import { ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Tooltip } from 'recharts';
 import { readExcelRaw, parseExcelDate } from '@/lib/excel';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { usePermissions } from '@/hooks/usePermissions';
+import { ColaboradorSearchSelect, type ColaboradorOption } from '@/components/colaboradores/ColaboradorSearchSelect';
 
 interface Treinamento {
   id: string;
@@ -30,11 +32,20 @@ const RAC_LIST = [
 ];
 
 export function TreinamentosSSMA() {
+  const navigate = useNavigate();
   const { canCreate, canEdit, canDelete } = usePermissions();
   const [data, setData] = useState<Treinamento[]>([]);
+  const [colaboradores, setColaboradores] = useState<ColaboradorOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [editItem, setEditItem] = useState<Treinamento | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newColabId, setNewColabId] = useState('');
+  const [newCnhCat, setNewCnhCat] = useState('');
+  const [newCnhVenc, setNewCnhVenc] = useState('');
+  const [newRacs, setNewRacs] = useState<Record<string, string>>(() =>
+    Object.fromEntries(RAC_LIST.map((r) => [r, '']))
+  );
 
   useEffect(() => {
     fetchData();
@@ -42,14 +53,50 @@ export function TreinamentosSSMA() {
 
   async function fetchData() {
     setLoading(true);
-    const { data: records, error } = await supabase.from('treinamentos_ssma').select('*').order('nome');
-    if (error) {
-      console.error(error);
-      // Fallback if table doesn't exist yet
-    } else {
-      setData(records || []);
+    const [treinRes, funcRes] = await Promise.all([
+      supabase.from('treinamentos_ssma').select('*').order('nome'),
+      supabase.from('funcionarios').select('id, nome, cpf, cargo, turno, letra, status_colaborador').order('nome'),
+    ]);
+    if (!treinRes.error) {
+      setData(treinRes.data || []);
     }
+    const activeFuncs = ((funcRes.data || []) as (ColaboradorOption & { status_colaborador?: string | null })[]).filter(
+      (f) => (f.status_colaborador || 'ATIVO').toUpperCase() !== 'DESLIGADO'
+    );
+    setColaboradores(activeFuncs);
     setLoading(false);
+  }
+
+  async function handleCreateFromColaborador() {
+    const colab = colaboradores.find((c) => c.id === newColabId);
+    if (!colab) {
+      toast.error('Selecione um colaborador cadastrado.');
+      return;
+    }
+    const cleanedRacs: Record<string, string> = {};
+    Object.entries(newRacs).forEach(([k, v]) => {
+      if (v.trim()) cleanedRacs[k] = v.trim();
+    });
+    const { error } = await supabase.from('treinamentos_ssma').insert({
+      nome: colab.nome,
+      cpf: colab.cpf || '',
+      funcao: colab.cargo || '',
+      situacao: 'ATIVO',
+      cnh_categoria: newCnhCat.trim().toUpperCase(),
+      cnh_vencimento: newCnhVenc.trim(),
+      treinamentos: cleanedRacs,
+    });
+    if (error) {
+      toast.error('Erro ao salvar treinamento: ' + error.message);
+      return;
+    }
+    toast.success('Treinamentos vinculados ao colaborador!');
+    setCreateOpen(false);
+    setNewColabId('');
+    setNewCnhCat('');
+    setNewCnhVenc('');
+    setNewRacs(Object.fromEntries(RAC_LIST.map((r) => [r, ''])));
+    fetchData();
   }
 
   const getStatusColor = (dateStr: string) => {
@@ -234,13 +281,64 @@ export function TreinamentosSSMA() {
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
               <ShieldAlert className="w-4 h-4 text-warning" /> Controle de Vencimentos
             </CardTitle>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Input 
                 placeholder="Buscar colaborador..." 
                 className="w-48 h-8 text-xs" 
                 value={search}
                 onChange={e => setSearch(e.target.value)}
               />
+              {canCreate('eventos') && (
+                <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+                  <DialogTrigger asChild>
+                    <Button size="sm" className="h-8 text-xs">
+                      <Plus className="w-3.5 h-3.5 mr-1" /> Vincular Colaborador
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-md">
+                    <DialogHeader>
+                      <DialogTitle>Vincular Treinamentos / RACs ao Colaborador</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-3.5 pt-2">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Colaborador Cadastrado *</Label>
+                        <ColaboradorSearchSelect
+                          colaboradores={colaboradores}
+                          value={newColabId}
+                          onValueChange={setNewColabId}
+                          placeholder="Pesquisar colaborador cadastrado..."
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <div className="space-y-1">
+                          <Label className="text-xs">Categoria CNH</Label>
+                          <Input value={newCnhCat} onChange={(e) => setNewCnhCat(e.target.value)} placeholder="Ex: D, E" className="h-8 text-xs" />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Vencimento CNH</Label>
+                          <Input type="date" value={newCnhVenc} onChange={(e) => setNewCnhVenc(e.target.value)} className="h-8 text-xs" />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {RAC_LIST.map((rac) => (
+                          <div key={rac} className="space-y-1">
+                            <Label className="text-[11px]">{rac}</Label>
+                            <Input
+                              type="date"
+                              value={newRacs[rac] || ''}
+                              onChange={(e) => setNewRacs((prev) => ({ ...prev, [rac]: e.target.value }))}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      <Button className="w-full" onClick={handleCreateFromColaborador}>
+                        Salvar Registro SSMA
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              )}
               <label className="cursor-pointer">
                 <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImport} />
                 <Button variant="outline" size="sm" className="h-8" asChild>
@@ -274,9 +372,24 @@ export function TreinamentosSSMA() {
                       else if (color === 'bg-warning' && piorColor !== 'bg-destructive') piorColor = 'bg-warning';
                     });
                     
-                    return (
+                      const matchedColab = colaboradores.find(
+                        (c) => c.nome.trim().toUpperCase() === d.nome.trim().toUpperCase()
+                      );
+                      return (
                       <TableRow key={d.id}>
-                        <TableCell className="text-xs py-2 font-medium">{d.nome}</TableCell>
+                        <TableCell className="text-xs py-2 font-medium">
+                          {matchedColab ? (
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/funcionario/${matchedColab.id}?tab=treinamentos`)}
+                              className="hover:text-primary hover:underline text-left font-semibold"
+                            >
+                              {d.nome}
+                            </button>
+                          ) : (
+                            d.nome
+                          )}
+                        </TableCell>
                         <TableCell className="text-xs py-2 text-muted-foreground">{d.funcao}</TableCell>
                         <TableCell className="text-xs py-2">
                           <div className="flex items-center gap-2">

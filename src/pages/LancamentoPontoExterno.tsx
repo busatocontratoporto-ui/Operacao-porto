@@ -35,7 +35,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
-import { ColaboradorSearchSelect, type ColaboradorOption } from '@/components/colaboradores/ColaboradorSearchSelect';
+import { ColaboradorSearchSelect, ColaboradorNameSelect, type ColaboradorOption } from '@/components/colaboradores/ColaboradorSearchSelect';
 
 interface ExternalLinkMeta {
   id: string;
@@ -516,14 +516,20 @@ export default function LancamentoPontoExterno() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-3.5 rounded-xl bg-muted/30 border border-border/60">
             <div className="space-y-1.5 sm:col-span-2">
               <Label className="text-xs font-semibold flex items-center gap-1.5">
-                <UserCheck className="w-3.5 h-3.5 text-primary" /> Seu Nome (Responsável pelo Lançamento) *
+                <UserCheck className="w-3.5 h-3.5 text-primary" /> Encarregado / Responsável pelo Lançamento *
               </Label>
-              <Input
-                value={launcherName}
-                onChange={(e) => setLauncherName(e.target.value)}
-                disabled={Boolean(linkMeta?.responsavel_nome)}
-                placeholder="Digite seu nome (Ex: Encarregado Agrimaldo)"
-              />
+              {linkMeta?.responsavel_nome ? (
+                <Input value={launcherName} disabled />
+              ) : (
+                <ColaboradorNameSelect
+                  colaboradores={colaboradores}
+                  roleFilter="encarregado"
+                  value={launcherName}
+                  onValueChange={(v) => setLauncherName(v)}
+                  placeholder="Selecione seu nome (Encarregado / Líder)..."
+                  allowCustom
+                />
+              )}
             </div>
 
             <div className="space-y-1.5">
