@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, User, ChevronDown, ChevronRight, Briefcase, Info, RefreshCw, X, GripHorizontal, Building2 } from 'lucide-react';
+import { Loader2, User, ChevronDown, ChevronRight, Briefcase, Info, RefreshCw, X, GripHorizontal, Building2, Eye } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -28,6 +29,7 @@ interface TreeNode extends Funcionario {
 }
 
 export default function Organograma() {
+  const navigate = useNavigate();
   const { userDepartment, effectiveDepartment, isDepartmentLocked, isAdmin } = useAuth();
   const [loading, setLoading] = useState(true);
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
@@ -393,6 +395,15 @@ export default function Organograma() {
                       </div>
                     </div>
                   )}
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full text-xs"
+                    onClick={() => navigate(`/funcionario/${selectedNode.id}`)}
+                  >
+                    <Eye className="h-3.5 w-3.5 mr-2" /> Ver Prontuário Completo
+                  </Button>
 
                   <div className="bg-muted/50 p-3 rounded-lg mt-4 text-xs text-muted-foreground flex items-start gap-2">
                     <Info className="h-4 w-4 shrink-0 mt-0.5" />

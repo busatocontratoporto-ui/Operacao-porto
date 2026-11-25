@@ -35,11 +35,9 @@ const AuthContext = createContext<AuthContextType>({
 });
 
 const ALL_APP_PAGES = [
-  'dashboard', 'colaboradores', 'organograma', 'ausencias',
-  'desempenho', 'treinamentos', 'disc', 'mbti', 'bigfive',
+  'dashboard', 'colaboradores', 'ponto', 'ferias', 'atestados', 'organograma', 'ausencias',
   'eventos', 'evolucao', 'notificacoes', 'configuracoes',
-  'cadastro', 'feedbacks', 'novo_feedback', 'relatorios',
-  'reunioes', 'cco', 'cco_painel', 'cco_programacao', 'cco_operacao',
+  'cco', 'cco_painel', 'cco_programacao', 'cco_operacao',
   'cco_corretivas', 'cco_medicao', 'cco_relatorios', 'cco_cadastros', 'admin',
 ];
 const MASTER_PERMS: Record<string, { can_view: boolean; can_create: boolean; can_edit: boolean; can_delete: boolean }> = {};
@@ -240,9 +238,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const hasConfiguredPerms = Object.keys(permsMap).length > 0;
     if (dept && !isUserAdmin && !hasConfiguredPerms) {
       const deptPagesAllowed = [
-        'colaboradores', 'organograma', 'ausencias',
-        'desempenho', 'feedbacks', 'novo_feedback',
-        'treinamentos', 'disc', 'mbti', 'bigfive',
+        'colaboradores', 'ponto', 'ferias', 'atestados', 'organograma', 'ausencias',
         'configuracoes'
       ];
       const deptPagesBlocked = ['dashboard', 'eventos', 'evolucao', 'notificacoes', 'admin'];

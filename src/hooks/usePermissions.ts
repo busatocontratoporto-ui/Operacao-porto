@@ -1,10 +1,11 @@
 import { useAuth } from '@/contexts/AuthContext';
-import { PAGES, CCO_PAGE_KEYS } from '@/lib/permissions';
+import { PAGES, CCO_PAGE_KEYS, RH_AUSENCIAS_PAGE_KEYS } from '@/lib/permissions';
 
 export function usePermissions() {
   const { isAdmin, permissions } = useAuth();
 
   const hasGranularCco = CCO_PAGE_KEYS.some((k) => permissions[k] !== undefined);
+  const hasGranularAusencias = RH_AUSENCIAS_PAGE_KEYS.some((k) => permissions[k] !== undefined);
 
   const resolvePerm = (page: string) => {
     if (page === 'cco') {
@@ -20,12 +21,27 @@ export function usePermissions() {
       return permissions['cco'];
     }
 
+    if (page === 'ausencias') {
+      if (hasGranularAusencias) {
+        const rhPerms = RH_AUSENCIAS_PAGE_KEYS.map((k) => permissions[k]).filter(Boolean);
+        return {
+          can_view: rhPerms.some((p) => p.can_view),
+          can_create: rhPerms.some((p) => p.can_create),
+          can_edit: rhPerms.some((p) => p.can_edit),
+          can_delete: rhPerms.some((p) => p.can_delete),
+        };
+      }
+      return permissions['ausencias'];
+    }
+
     if (permissions[page] !== undefined) return permissions[page];
 
-    // Se for uma sub-página do CCO e o usuário só tiver permissão legada 'cco' (sem nenhuma granular salva)
     const def = PAGES.find((p) => p.key === page);
     if (def?.legacyAlias === 'cco' && !hasGranularCco && permissions['cco'] !== undefined) {
       return permissions['cco'];
+    }
+    if (def?.legacyAlias === 'ausencias' && !hasGranularAusencias && permissions['ausencias'] !== undefined) {
+      return permissions['ausencias'];
     }
 
     return undefined;

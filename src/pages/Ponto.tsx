@@ -1,0 +1,1001 @@
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
+import {
+  Clock, Plus, Trash2, AlertTriangle, Users, TrendingUp, Shield,
+  Upload, Download, ShieldAlert, Search, X, MinusCircle, Eye, CalendarDays
+} from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import PeriodFilter, { getPortoPeriod, type PeriodRange } from '@/components/filters/PeriodFilter';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { FastTextarea } from '@/components/ui/fast-textarea';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Progress } from '@/components/ui/progress';
+import { ExpandableChart } from '@/components/ui/ExpandableChart';
+import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, Legend
+} from 'recharts';
+import { readExcelRows, parseExcelDate, writeExcelFile } from '@/lib/excel';
+import { usePermissions } from '@/hooks/usePermissions';
+import { useAuth } from '@/contexts/AuthContext';
+import { DEPARTAMENTOS } from '@/lib/departments';
+import { Building2 } from 'lucide-react';
+
+interface Attendance {
+  id: string;
+  employee_id: string;
+  date: string;
+  status: string;
+  observation: string;
+  created_at: string;
+  employee_name?: string;
+  turno?: string;
+  letra?: string;
+  cargo?: string;
+}
+
+interface OvertimeRecord {
+  id: string;
+  employee_id: string;
+  period_start: string;
+  period_end: string;
+  extras_count: number;
+  max_extras: number;
+  employee_name?: string;
+}
+
+interface Warning {
+  id: string;
+  employee_id: string;
+  date: string;
+  reason: string;
+  applied: boolean;
+  observation: string;
+  created_at: string;
+  employee_name?: string;
+}
+
+interface Func {
+  id: string;
+  nome: string;
+  turno: string;
+  letra: string;
+  cargo: string;
+  departamento: string;
+  status_colaborador?: string | null;
+  foto_url?: string;
+}
+
+const PONTO_STATUS_OPTIONS = [
+  { value: 'falta_injustificada', label: 'Falta Injustificada' },
+  { value: 'falta_justificada', label: 'Falta Justificada' },
+  { value: 'extra', label: 'Hora Extra' },
+  { value: 'banco_horas', label: 'Banco de Horas' },
+  { value: 'abono', label: 'Abono' },
+  { value: 'presente', label: 'Presente' },
+];
+
+const statusLabels: Record<string, string> = {
+  presente: 'Presente',
+  falta_injustificada: 'Falta Injustificada',
+  falta: 'Falta Injustificada',
+  falta_justificada: 'Falta Justificada',
+  extra: 'Hora Extra',
+  abono: 'Abono',
+  banco_horas: 'Banco de Horas',
+};
+
+function statusBadge(status: string) {
+  switch (status) {
+    case 'falta_injustificada':
+    case 'falta':
+      return 'bg-destructive/15 text-destructive';
+    case 'falta_justificada':
+      return 'bg-amber-500/15 text-amber-700';
+    case 'extra':
+      return 'bg-purple-500/15 text-purple-700';
+    case 'banco_horas':
+      return 'bg-blue-500/15 text-blue-700';
+    case 'abono':
+      return 'bg-emerald-500/15 text-emerald-700';
+    default:
+      return 'bg-muted text-muted-foreground';
+  }
+}
+
+const PIE_COLORS = ['#ef4444', '#f59e0b', '#8b5cf6', '#3b82f6', '#10b981', '#64748b'];
+
+function formatDate(d: string | null) {
+  if (!d) return '—';
+  return new Date(d + 'T00:00:00').toLocaleDateString('pt-BR');
+}
+
+export default function Ponto() {
+  const navigate = useNavigate();
+  const { canCreate, canDelete } = usePermissions();
+  const { userDepartment, effectiveDepartment, isDepartmentLocked } = useAuth();
+  const [deptFilter, setDeptFilter] = useState<string>('todos');
+  const [period, setPeriod] = useState<PeriodRange>(getPortoPeriod(0));
+
+  useEffect(() => {
+    if (isDepartmentLocked && userDepartment) {
+      setDeptFilter(userDepartment);
+    } else if (effectiveDepartment) {
+      setDeptFilter(effectiveDepartment);
+    }
+  }, [isDepartmentLocked, userDepartment, effectiveDepartment]);
+
+  const [attendance, setAttendance] = useState<Attendance[]>([]);
+  const [overtimes, setOvertimes] = useState<OvertimeRecord[]>([]);
+  const [warnings, setWarnings] = useState<Warning[]>([]);
+  const [funcionarios, setFuncionarios] = useState<Func[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [warningDialogOpen, setWarningDialogOpen] = useState(false);
+
+  const [employeeSearch, setEmployeeSearch] = useState('');
+  const [selectedEmployee, setSelectedEmployee] = useState<Func | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string>('todos');
+
+  const pontoFileRef = useRef<HTMLInputElement>(null);
+  const extrasFileRef = useRef<HTMLInputElement>(null);
+
+  const [form, setForm] = useState({
+    employee_id: '',
+    date: new Date().toISOString().slice(0, 10),
+    status: 'falta_injustificada',
+    observation: '',
+  });
+
+  const [warningForm, setWarningForm] = useState({
+    employee_id: '',
+    date: new Date().toISOString().slice(0, 10),
+    reason: '',
+    applied: 'true',
+    observation: '',
+  });
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { fetchAll(); }, [period, deptFilter, userDepartment, isDepartmentLocked]);
+
+  async function fetchAll() {
+    setLoading(true);
+    const [attRes, ovtRes, fRes, warnRes] = await Promise.all([
+      supabase
+        .from('daily_attendance')
+        .select('*')
+        .gte('date', period.start)
+        .lte('date', period.end)
+        .not('status', 'in', '("atestado","afastamento","ferias")')
+        .order('date', { ascending: false }),
+      supabase.from('overtime_control').select('*').gte('period_start', period.start).lte('period_end', period.end),
+      supabase.from('funcionarios').select('id, nome, turno, letra, cargo, departamento, status_colaborador, foto_url').order('nome'),
+      supabase.from('employee_warnings').select('*').order('date', { ascending: false }),
+    ]);
+
+    const rawFuncs = ((fRes.data || []) as Func[]).filter(
+      (f) => (f.status_colaborador || 'ATIVO').toUpperCase() !== 'DESLIGADO'
+    );
+    const activeDept = (isDepartmentLocked && userDepartment) ? userDepartment : deptFilter;
+    const funcs = activeDept === 'todos' ? rawFuncs : rawFuncs.filter((f) => f.departamento === activeDept);
+    setFuncionarios(funcs);
+
+    const deptEmpIds = new Set(funcs.map((f) => f.id));
+    const nameMap = Object.fromEntries(funcs.map((f) => [f.id, f]));
+
+    setAttendance(
+      (attRes.data || [])
+        .filter((a) => deptEmpIds.has(a.employee_id))
+        .map((a) => ({
+          ...a,
+          status: a.status === 'falta' ? 'falta_injustificada' : a.status,
+          employee_name: nameMap[a.employee_id]?.nome || 'Desconhecido',
+          turno: nameMap[a.employee_id]?.turno,
+          letra: nameMap[a.employee_id]?.letra,
+          cargo: nameMap[a.employee_id]?.cargo,
+        }))
+    );
+
+    setOvertimes(
+      (ovtRes.data || [])
+        .filter((o) => deptEmpIds.has(o.employee_id))
+        .map((o) => ({
+          ...o,
+          employee_name: nameMap[o.employee_id]?.nome || 'Desconhecido',
+        }))
+    );
+
+    setWarnings(
+      (warnRes.data || [])
+        .filter((w) => deptEmpIds.has(w.employee_id))
+        .map((w) => ({
+          ...w,
+          employee_name: nameMap[w.employee_id]?.nome || 'Desconhecido',
+        }))
+    );
+    setLoading(false);
+  }
+
+  const filteredAttendance = useMemo(() => {
+    return attendance.filter((a) => {
+      if (selectedEmployee && a.employee_id !== selectedEmployee.id) return false;
+      if (statusFilter !== 'todos' && a.status !== statusFilter) return false;
+      if (employeeSearch.trim()) {
+        const q = employeeSearch.toLowerCase();
+        if (!(a.employee_name || '').toLowerCase().includes(q) && !(a.cargo || '').toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
+  }, [attendance, selectedEmployee, statusFilter, employeeSearch]);
+
+  const filteredWarnings = useMemo(() => {
+    if (!selectedEmployee) return warnings;
+    return warnings.filter((w) => w.employee_id === selectedEmployee.id);
+  }, [warnings, selectedEmployee]);
+
+  // Metrics
+  const faltasInjCount = filteredAttendance.filter((a) => a.status === 'falta_injustificada').length;
+  const faltasJustCount = filteredAttendance.filter((a) => a.status === 'falta_justificada' || a.status === 'abono').length;
+  const extrasCount = filteredAttendance.filter((a) => a.status === 'extra').length;
+  const bancoHorasCount = filteredAttendance.filter((a) => a.status === 'banco_horas').length;
+
+  const extrasPerEmployee = useMemo(() => {
+    const map: Record<string, { id: string; name: string; count: number; limit: number }> = {};
+    filteredAttendance
+      .filter((a) => a.status === 'extra')
+      .forEach((a) => {
+        if (!map[a.employee_id]) {
+          map[a.employee_id] = { id: a.employee_id, name: a.employee_name || 'Colaborador', count: 0, limit: 3 };
+        }
+        map[a.employee_id].count += 1;
+      });
+    overtimes.forEach((o) => {
+      if (!map[o.employee_id] && o.extras_count > 0) {
+        map[o.employee_id] = { id: o.employee_id, name: o.employee_name || 'Colaborador', count: o.extras_count, limit: o.max_extras || 3 };
+      } else if (map[o.employee_id]) {
+        map[o.employee_id].count = Math.max(map[o.employee_id].count, o.extras_count);
+      }
+    });
+    return Object.values(map).sort((a, b) => b.count - a.count);
+  }, [filteredAttendance, overtimes]);
+
+  const blockedExtrasCount = extrasPerEmployee.filter((e) => e.count >= e.limit).length;
+
+  const negativeHoursPerEmployee = useMemo(() => {
+    const map: Record<string, { name: string; faltasInj: number; faltasJust: number; banco: number; total: number }> = {};
+    filteredAttendance.forEach((a) => {
+      if (!['falta_injustificada', 'falta_justificada', 'banco_horas'].includes(a.status)) return;
+      if (!map[a.employee_id]) {
+        map[a.employee_id] = { name: a.employee_name || 'Colaborador', faltasInj: 0, faltasJust: 0, banco: 0, total: 0 };
+      }
+      if (a.status === 'falta_injustificada') map[a.employee_id].faltasInj += 1;
+      if (a.status === 'falta_justificada') map[a.employee_id].faltasJust += 1;
+      if (a.status === 'banco_horas') map[a.employee_id].banco += 1;
+      map[a.employee_id].total += 1;
+    });
+    return Object.values(map).sort((a, b) => b.total - a.total);
+  }, [filteredAttendance]);
+
+  const dailyChartData = useMemo(() => {
+    const byDate: Record<string, { date: string; 'Faltas Inj.': number; 'Faltas Just./Abono': number; Extras: number; 'Banco de Horas': number }> = {};
+    filteredAttendance.forEach((a) => {
+      const key = a.date.slice(5).split('-').reverse().join('/');
+      if (!byDate[key]) {
+        byDate[key] = { date: key, 'Faltas Inj.': 0, 'Faltas Just./Abono': 0, Extras: 0, 'Banco de Horas': 0 };
+      }
+      if (a.status === 'falta_injustificada') byDate[key]['Faltas Inj.'] += 1;
+      else if (a.status === 'falta_justificada' || a.status === 'abono') byDate[key]['Faltas Just./Abono'] += 1;
+      else if (a.status === 'extra') byDate[key].Extras += 1;
+      else if (a.status === 'banco_horas') byDate[key]['Banco de Horas'] += 1;
+    });
+    return Object.values(byDate).slice(0, 15).reverse();
+  }, [filteredAttendance]);
+
+  const statusDistribution = useMemo(() => {
+    const counts: Record<string, number> = {};
+    filteredAttendance.forEach((a) => {
+      const label = statusLabels[a.status] || a.status;
+      counts[label] = (counts[label] || 0) + 1;
+    });
+    return Object.entries(counts).map(([name, value], idx) => ({
+      name,
+      value,
+      fill: PIE_COLORS[idx % PIE_COLORS.length],
+    }));
+  }, [filteredAttendance]);
+
+  async function handleCreateAttendance() {
+    if (!form.employee_id || !form.date) {
+      toast.error('Selecione o colaborador e a data.');
+      return;
+    }
+    const statusToSave = form.status === 'falta_injustificada' ? 'falta' : form.status;
+
+    if (form.status === 'extra') {
+      const { count } = await supabase
+        .from('daily_attendance')
+        .select('*', { count: 'exact', head: true })
+        .eq('employee_id', form.employee_id)
+        .eq('status', 'extra')
+        .gte('date', period.start)
+        .lte('date', period.end);
+
+      if ((count || 0) >= 3) {
+        toast.error('⚠️ LIMITE ATINGIDO: Este colaborador já realizou 3 horas extras neste período.');
+        return;
+      }
+    }
+
+    const { error } = await supabase.from('daily_attendance').insert({
+      employee_id: form.employee_id,
+      date: form.date,
+      status: statusToSave,
+      observation: form.observation,
+    });
+
+    if (error) {
+      if (error.code === '23505') toast.error('Já existe registro para este colaborador nesta data.');
+      else toast.error('Erro ao registrar ponto: ' + error.message);
+      return;
+    }
+
+    if (form.status === 'extra') {
+      const { data: existing } = await supabase
+        .from('overtime_control')
+        .select('*')
+        .eq('employee_id', form.employee_id)
+        .eq('period_start', period.start)
+        .eq('period_end', period.end)
+        .maybeSingle();
+
+      if (existing) {
+        await supabase
+          .from('overtime_control')
+          .update({ extras_count: (existing as { extras_count: number; id: string }).extras_count + 1, updated_at: new Date().toISOString() })
+          .eq('id', (existing as { extras_count: number; id: string }).id);
+      } else {
+        await supabase.from('overtime_control').insert({
+          employee_id: form.employee_id,
+          period_start: period.start,
+          period_end: period.end,
+          extras_count: 1,
+          max_extras: 3,
+        });
+      }
+    }
+
+    setDialogOpen(false);
+    setForm({ employee_id: '', date: new Date().toISOString().slice(0, 10), status: 'falta_injustificada', observation: '' });
+    toast.success('Apontamento registrado com sucesso!');
+    fetchAll();
+  }
+
+  async function handleCreateWarning() {
+    if (!warningForm.employee_id || !warningForm.reason.trim()) {
+      toast.error('Selecione o colaborador e informe o motivo.');
+      return;
+    }
+    const { error } = await supabase.from('employee_warnings').insert({
+      employee_id: warningForm.employee_id,
+      date: warningForm.date,
+      reason: warningForm.reason,
+      applied: warningForm.applied === 'true',
+      observation: warningForm.observation,
+    });
+    if (error) {
+      toast.error('Erro ao registrar advertência: ' + error.message);
+      return;
+    }
+    setWarningDialogOpen(false);
+    setWarningForm({ employee_id: '', date: new Date().toISOString().slice(0, 10), reason: '', applied: 'true', observation: '' });
+    toast.success('Advertência registrada!');
+    fetchAll();
+  }
+
+  async function deleteAttendance(id: string) {
+    if (!canDelete('ponto')) {
+      toast.error('Sem permissão para excluir apontamentos.');
+      return;
+    }
+    const { error } = await supabase.from('daily_attendance').delete().eq('id', id);
+    if (error) toast.error('Erro ao remover: ' + error.message);
+    else {
+      toast.success('Apontamento removido.');
+      fetchAll();
+    }
+  }
+
+  async function deleteWarning(id: string) {
+    if (!canDelete('ponto')) {
+      toast.error('Sem permissão para excluir advertências.');
+      return;
+    }
+    const { error } = await supabase.from('employee_warnings').delete().eq('id', id);
+    if (error) toast.error('Erro ao remover advertência: ' + error.message);
+    else {
+      toast.success('Advertência removida.');
+      fetchAll();
+    }
+  }
+
+  async function handleImportPonto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const data = await file.arrayBuffer();
+      const rows = await readExcelRows(data);
+      const nameToId = Object.fromEntries(funcionarios.map((f) => [f.nome.toLowerCase().trim(), f.id]));
+      let imported = 0;
+      for (const row of rows) {
+        const nome = String(row['Nome'] || row['nome'] || row['Colaborador'] || '').toLowerCase().trim();
+        const empId = nameToId[nome];
+        if (!empId) continue;
+        const dateStr = parseExcelDate(row['Data'] || row['data']);
+        if (!dateStr) continue;
+        const status = String(row['Status'] || row['status'] || 'falta').toLowerCase().trim();
+        const obs = String(row['Observação'] || row['observacao'] || row['Obs'] || '');
+        await supabase.from('daily_attendance').insert({
+          employee_id: empId,
+          date: dateStr,
+          status,
+          observation: obs,
+        });
+        imported++;
+      }
+      toast.success(`${imported} registro(s) de ponto importado(s)!`);
+      fetchAll();
+    } catch {
+      toast.error('Erro ao importar planilha de ponto.');
+    }
+    if (pontoFileRef.current) pontoFileRef.current.value = '';
+  }
+
+  async function handleImportExtras(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const data = await file.arrayBuffer();
+      const rows = await readExcelRows(data);
+      const nameToId = Object.fromEntries(funcionarios.map((f) => [f.nome.toLowerCase().trim(), f.id]));
+      let imported = 0;
+      for (const row of rows) {
+        const nome = String(row['Nome'] || row['nome'] || row['Colaborador'] || '').toLowerCase().trim();
+        const empId = nameToId[nome];
+        if (!empId) continue;
+        const periodStart = parseExcelDate(row['Início Período'] || row['inicio_periodo']);
+        const periodEnd = parseExcelDate(row['Fim Período'] || row['fim_periodo']);
+        if (!periodStart || !periodEnd) continue;
+        await supabase.from('overtime_control').insert({
+          employee_id: empId,
+          period_start: periodStart,
+          period_end: periodEnd,
+          extras_count: parseInt(String(row['Extras Realizadas'] || row['extras_count'] || '0')) || 0,
+          max_extras: parseInt(String(row['Máximo Extras'] || row['max_extras'] || '3')) || 3,
+        });
+        imported++;
+      }
+      toast.success(`${imported} registro(s) de horas extras importado(s)!`);
+      fetchAll();
+    } catch {
+      toast.error('Erro ao importar planilha de extras.');
+    }
+    if (extrasFileRef.current) extrasFileRef.current.value = '';
+  }
+
+  async function handleExportExcel() {
+    const rows = filteredAttendance.map((a) => ({
+      Data: formatDate(a.date),
+      Colaborador: a.employee_name || '',
+      Cargo: a.cargo || '',
+      Turno: `${a.letra || ''} ${a.turno || ''}`.trim(),
+      Tipo: statusLabels[a.status] || a.status,
+      Observacao: a.observation || '',
+    }));
+    await writeExcelFile(rows, 'Ponto', `Relatorio_Ponto_${period.start}_a_${period.end}.xlsx`);
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <Clock className="w-6 h-6 text-primary" /> Ponto & Banco de Horas
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Controle operacional de faltas, horas extras (limite de 3 por ciclo), banco de horas, abonos e advertências
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {isDepartmentLocked && userDepartment ? (
+            <div className="flex items-center gap-1.5 px-3 py-2 bg-primary/10 border border-primary/20 text-primary font-semibold text-xs rounded-lg">
+              <Building2 className="w-4 h-4" />
+              <span>{userDepartment}</span>
+            </div>
+          ) : (
+            <Select value={deptFilter} onValueChange={setDeptFilter}>
+              <SelectTrigger className="w-44 h-9 text-xs"><SelectValue placeholder="Departamento" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos os Contratos</SelectItem>
+                {DEPARTAMENTOS.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          )}
+
+          {canCreate('ponto') && (
+            <>
+              <input ref={pontoFileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImportPonto} />
+              <input ref={extrasFileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImportExtras} />
+              <Button variant="outline" size="sm" onClick={() => pontoFileRef.current?.click()}>
+                <Upload className="w-3.5 h-3.5 mr-1.5" /> Importar Ponto
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleExportExcel}>
+                <Download className="w-3.5 h-3.5 mr-1.5" /> Exportar Excel
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setWarningDialogOpen(true)}>
+                <ShieldAlert className="w-3.5 h-3.5 mr-1.5 text-destructive" /> Advertência
+              </Button>
+              <Button size="sm" onClick={() => setDialogOpen(true)}>
+                <Plus className="w-4 h-4 mr-1.5" /> Lançar Ponto
+              </Button>
+            </>
+          )}
+        </div>
+      </motion.div>
+
+      {/* Filters */}
+      <div className="flex flex-col md:flex-row gap-3 items-start md:items-center">
+        <div className="flex-1 w-full">
+          <PeriodFilter value={period} onChange={setPeriod} />
+        </div>
+        <div className="flex gap-2 w-full md:w-auto">
+          <div className="relative flex-1 md:w-64">
+            <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+            <Input
+              placeholder="Buscar colaborador..."
+              value={employeeSearch}
+              onChange={(e) => setEmployeeSearch(e.target.value)}
+              className="pl-9 h-9 text-xs"
+            />
+          </div>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-44 h-9 text-xs"><SelectValue placeholder="Tipo" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos os Tipos</SelectItem>
+              {PONTO_STATUS_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {selectedEmployee && (
+        <div className="glass-card rounded-xl p-3 border-l-4 border-l-primary flex items-center justify-between">
+          <span className="text-sm font-semibold">Filtrando colaborador: <strong className="text-primary">{selectedEmployee.nome}</strong></span>
+          <Button variant="ghost" size="sm" onClick={() => setSelectedEmployee(null)}>
+            <X className="w-4 h-4 mr-1" /> Limpar filtro
+          </Button>
+        </div>
+      )}
+
+      {/* KPIs */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+        <div className="kpi-card danger">
+          <p className="text-2xl font-bold">{faltasInjCount}</p>
+          <p className="text-[10px] font-bold uppercase tracking-wider opacity-75 mt-1">Faltas Injustificadas</p>
+        </div>
+        <div className="kpi-card warning">
+          <p className="text-2xl font-bold">{faltasJustCount}</p>
+          <p className="text-[10px] font-bold uppercase tracking-wider opacity-75 mt-1">Faltas Justif. / Abonos</p>
+        </div>
+        <div className="kpi-card purple">
+          <p className="text-2xl font-bold">{extrasCount}</p>
+          <p className="text-[10px] font-bold uppercase tracking-wider opacity-75 mt-1">Horas Extras ({blockedExtrasCount} bloq.)</p>
+        </div>
+        <div className="kpi-card">
+          <p className="text-2xl font-bold text-blue-600">{bancoHorasCount}</p>
+          <p className="text-[10px] font-bold uppercase tracking-wider opacity-75 mt-1">Banco de Horas</p>
+        </div>
+        <div className="kpi-card danger">
+          <p className="text-2xl font-bold">{filteredWarnings.length}</p>
+          <p className="text-[10px] font-bold uppercase tracking-wider opacity-75 mt-1">Advertências</p>
+        </div>
+      </div>
+
+      <Tabs defaultValue="visao-geral" className="w-full">
+        <TabsList className="bg-card border border-border p-1 h-auto flex-wrap mb-4">
+          <TabsTrigger value="visao-geral" className="text-xs sm:text-sm px-4 py-2">Painel & Controle de Extras</TabsTrigger>
+          <TabsTrigger value="quadro" className="text-xs sm:text-sm px-4 py-2">Quadro & Registros de Ponto ({filteredAttendance.length})</TabsTrigger>
+          <TabsTrigger value="advertencias" className="text-xs sm:text-sm px-4 py-2">Advertências ({filteredWarnings.length})</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="visao-geral" className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="corporate-section p-5 lg:col-span-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4">
+                Movimentação Diária de Ponto — {period.label}
+              </h3>
+              {dailyChartData.length > 0 ? (
+                <ExpandableChart title="Movimentação Diária de Ponto">
+                  <ResponsiveContainer width="100%" height={260}>
+                    <BarChart data={dailyChartData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} />
+                      <YAxis tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} />
+                      <Tooltip />
+                      <Legend wrapperStyle={{ fontSize: 11 }} />
+                      <Bar dataKey="Faltas Inj." stackId="a" fill="#ef4444" />
+                      <Bar dataKey="Faltas Just./Abono" stackId="a" fill="#f59e0b" />
+                      <Bar dataKey="Extras" stackId="a" fill="#8b5cf6" />
+                      <Bar dataKey="Banco de Horas" stackId="a" fill="#3b82f6" radius={[3, 3, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </ExpandableChart>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-14 text-muted-foreground">
+                  <CalendarDays className="w-10 h-10 mb-2 opacity-20" />
+                  <p className="text-sm">Nenhum apontamento de ponto registrado no período.</p>
+                </div>
+              )}
+            </div>
+
+            <div className="corporate-section p-5">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4">
+                Distribuição por Tipo
+              </h3>
+              {statusDistribution.length > 0 ? (
+                <ExpandableChart title="Distribuição de Ponto">
+                  <ResponsiveContainer width="100%" height={260}>
+                    <PieChart>
+                      <Pie data={statusDistribution} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius="80%" innerRadius="48%">
+                        {statusDistribution.map((entry, idx) => (
+                          <Cell key={idx} fill={entry.fill} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                      <Legend wrapperStyle={{ fontSize: 11 }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </ExpandableChart>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-14 text-muted-foreground">
+                  <Clock className="w-10 h-10 mb-2 opacity-20" />
+                  <p className="text-sm">Sem dados no período.</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Controle de Horas Extras */}
+          <div className="corporate-section p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                <Shield className="w-4 h-4 text-primary" /> Controle de Horas Extras — Limite: 3 por Período
+              </h3>
+              <span className="text-xs text-muted-foreground">{period.label}</span>
+            </div>
+            {extrasPerEmployee.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {extrasPerEmployee.map((emp) => {
+                  const pct = (emp.count / emp.limit) * 100;
+                  const isBlocked = emp.count >= emp.limit;
+                  return (
+                    <div key={emp.id} className={`rounded-lg p-4 border transition-colors ${isBlocked ? 'border-destructive/40 bg-destructive/5' : 'border-border bg-card'}`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <button onClick={() => navigate(`/funcionario/${emp.id}`)} className="font-medium text-sm truncate mr-2 hover:text-primary text-left">
+                          {emp.name}
+                        </button>
+                        <span className={`text-xs font-bold whitespace-nowrap ${isBlocked ? 'text-destructive' : 'text-foreground'}`}>
+                          {emp.count}/{emp.limit} {isBlocked && '⛔'}
+                        </span>
+                      </div>
+                      <Progress value={Math.min(pct, 100)} className={`h-2 ${isBlocked ? '[&>div]:bg-destructive' : pct >= 66 ? '[&>div]:bg-warning' : '[&>div]:bg-success'}`} />
+                      {isBlocked && <p className="text-[10px] text-destructive font-semibold mt-1.5 uppercase tracking-wider">Novas extras bloqueadas</p>}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                <TrendingUp className="w-8 h-8 mx-auto mb-2 opacity-20" />
+                <p className="text-sm">Nenhuma hora extra registrada no período atual.</p>
+              </div>
+            )}
+          </div>
+
+          {/* Horas Negativas & Banco */}
+          <div className="corporate-section p-5">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4">
+              <MinusCircle className="w-3.5 h-3.5 inline mr-1.5" /> Faltas & Banco de Horas por Colaborador
+            </h3>
+            {negativeHoursPerEmployee.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border bg-muted/30">
+                      <th className="text-left px-4 py-2 text-[10px] uppercase font-semibold text-muted-foreground">Colaborador</th>
+                      <th className="text-center px-4 py-2 text-[10px] uppercase font-semibold text-muted-foreground">Faltas Injustif.</th>
+                      <th className="text-center px-4 py-2 text-[10px] uppercase font-semibold text-muted-foreground">Faltas Justif.</th>
+                      <th className="text-center px-4 py-2 text-[10px] uppercase font-semibold text-muted-foreground">Banco de Horas</th>
+                      <th className="text-center px-4 py-2 text-[10px] uppercase font-semibold text-muted-foreground">Total Ocorrências</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {negativeHoursPerEmployee.map((emp) => (
+                      <tr key={emp.name} className="border-b border-border/50 hover:bg-muted/20">
+                        <td className="px-4 py-2.5 font-medium text-xs">{emp.name}</td>
+                        <td className="px-4 py-2.5 text-center text-xs font-bold text-destructive">{emp.faltasInj}</td>
+                        <td className="px-4 py-2.5 text-center text-xs">{emp.faltasJust}</td>
+                        <td className="px-4 py-2.5 text-center text-xs font-semibold text-blue-600">{emp.banco}</td>
+                        <td className="px-4 py-2.5 text-center text-xs font-bold">{emp.total}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-center py-6 text-sm text-muted-foreground">Nenhuma falta ou banco de horas registrado no período.</p>
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="quadro" className="space-y-6">
+          {/* Lançamentos Detalhados */}
+          <div className="corporate-section p-5">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4">
+              Registros de Ponto Detalhados ({filteredAttendance.length})
+            </h3>
+            {filteredAttendance.length === 0 ? (
+              <p className="text-center py-8 text-muted-foreground text-sm">Nenhum apontamento encontrado para os filtros selecionados.</p>
+            ) : (
+              <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-muted/95">
+                    <tr className="border-b border-border">
+                      <th className="text-left px-4 py-2.5 text-[10px] uppercase font-semibold text-muted-foreground">Data</th>
+                      <th className="text-left px-4 py-2.5 text-[10px] uppercase font-semibold text-muted-foreground">Colaborador</th>
+                      <th className="text-left px-4 py-2.5 text-[10px] uppercase font-semibold text-muted-foreground">Cargo / Turno</th>
+                      <th className="text-left px-4 py-2.5 text-[10px] uppercase font-semibold text-muted-foreground">Tipo</th>
+                      <th className="text-left px-4 py-2.5 text-[10px] uppercase font-semibold text-muted-foreground">Observação</th>
+                      <th className="text-right px-4 py-2.5 text-[10px] uppercase font-semibold text-muted-foreground">Ação</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredAttendance.map((a) => (
+                      <tr key={a.id} className="border-b border-border/50 hover:bg-muted/20">
+                        <td className="px-4 py-2.5 text-xs whitespace-nowrap">{formatDate(a.date)}</td>
+                        <td className="px-4 py-2.5 font-semibold text-xs">
+                          <button onClick={() => navigate(`/funcionario/${a.employee_id}`)} className="hover:text-primary hover:underline text-left">
+                            {a.employee_name}
+                          </button>
+                        </td>
+                        <td className="px-4 py-2.5 text-xs text-muted-foreground">{a.cargo} {a.letra ? `• ${a.letra}` : ''}</td>
+                        <td className="px-4 py-2.5">
+                          <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-semibold ${statusBadge(a.status)}`}>
+                            {statusLabels[a.status] || a.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5 text-xs text-muted-foreground max-w-[260px] truncate">{a.observation || '—'}</td>
+                        <td className="px-4 py-2.5 text-right">
+                          {canDelete('ponto') && (
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => deleteAttendance(a.id)}>
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Quadro Geral de Colaboradores */}
+          <div className="corporate-section p-5">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4">
+              Quadro de Frequência da Equipe ({funcionarios.length} ativos)
+            </h3>
+            <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-muted/95">
+                  <tr className="border-b border-border">
+                    <th className="text-left px-4 py-2.5 text-[10px] uppercase font-semibold text-muted-foreground">Colaborador</th>
+                    <th className="text-left px-4 py-2.5 text-[10px] uppercase font-semibold text-muted-foreground">Função / Turno</th>
+                    <th className="text-center px-4 py-2.5 text-[10px] uppercase font-semibold text-muted-foreground">Faltas Inj.</th>
+                    <th className="text-center px-4 py-2.5 text-[10px] uppercase font-semibold text-muted-foreground">Faltas Just./Abono</th>
+                    <th className="text-center px-4 py-2.5 text-[10px] uppercase font-semibold text-muted-foreground">Extras</th>
+                    <th className="text-center px-4 py-2.5 text-[10px] uppercase font-semibold text-muted-foreground">Banco Horas</th>
+                    <th className="text-center px-4 py-2.5 text-[10px] uppercase font-semibold text-muted-foreground">Advert.</th>
+                    <th className="text-right px-4 py-2.5 text-[10px] uppercase font-semibold text-muted-foreground">Perfil</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {funcionarios
+                    .filter((f) => !employeeSearch.trim() || f.nome.toLowerCase().includes(employeeSearch.toLowerCase()))
+                    .map((f) => {
+                      const empAtt = attendance.filter((a) => a.employee_id === f.id);
+                      const fInj = empAtt.filter((a) => a.status === 'falta_injustificada').length;
+                      const fJust = empAtt.filter((a) => a.status === 'falta_justificada' || a.status === 'abono').length;
+                      const ext = empAtt.filter((a) => a.status === 'extra').length;
+                      const bh = empAtt.filter((a) => a.status === 'banco_horas').length;
+                      const wCount = warnings.filter((w) => w.employee_id === f.id).length;
+                      const blocked = ext >= 3;
+                      return (
+                        <tr key={f.id} className="border-b border-border/50 hover:bg-muted/20">
+                          <td className="px-4 py-2.5 font-medium text-xs">{f.nome}</td>
+                          <td className="px-4 py-2.5 text-xs text-muted-foreground">{f.cargo} {f.letra ? `• Letra ${f.letra}` : ''}</td>
+                          <td className="px-4 py-2.5 text-center text-xs font-bold text-destructive">{fInj}</td>
+                          <td className="px-4 py-2.5 text-center text-xs">{fJust}</td>
+                          <td className={`px-4 py-2.5 text-center text-xs font-bold ${blocked ? 'text-destructive' : ''}`}>
+                            {ext}/3 {blocked && '⛔'}
+                          </td>
+                          <td className="px-4 py-2.5 text-center text-xs text-blue-600 font-semibold">{bh}</td>
+                          <td className="px-4 py-2.5 text-center text-xs font-bold text-destructive">{wCount}</td>
+                          <td className="px-4 py-2.5 text-right">
+                            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => navigate(`/funcionario/${f.id}`)}>
+                              <Eye className="w-3.5 h-3.5 mr-1" /> Perfil
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="advertencias">
+          <div className="corporate-section p-5">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4">
+              Advertências Disciplinares ({filteredWarnings.length})
+            </h3>
+            {filteredWarnings.length === 0 ? (
+              <p className="text-center py-8 text-muted-foreground text-sm">Nenhuma advertência registrada.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border bg-muted/30">
+                      <th className="text-left px-4 py-2.5 text-[10px] uppercase font-semibold text-muted-foreground">Data</th>
+                      <th className="text-left px-4 py-2.5 text-[10px] uppercase font-semibold text-muted-foreground">Colaborador</th>
+                      <th className="text-left px-4 py-2.5 text-[10px] uppercase font-semibold text-muted-foreground">Motivo</th>
+                      <th className="text-center px-4 py-2.5 text-[10px] uppercase font-semibold text-muted-foreground">Status</th>
+                      <th className="text-left px-4 py-2.5 text-[10px] uppercase font-semibold text-muted-foreground">Observação</th>
+                      <th className="text-right px-4 py-2.5 text-[10px] uppercase font-semibold text-muted-foreground">Ação</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredWarnings.map((w) => (
+                      <tr key={w.id} className="border-b border-border/50 hover:bg-muted/20">
+                        <td className="px-4 py-2.5 text-xs">{formatDate(w.date)}</td>
+                        <td className="px-4 py-2.5 font-medium text-xs">{w.employee_name}</td>
+                        <td className="px-4 py-2.5 text-xs">{w.reason}</td>
+                        <td className="px-4 py-2.5 text-center">
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${w.applied ? 'bg-destructive/15 text-destructive' : 'bg-warning/15 text-warning'}`}>
+                            {w.applied ? 'APLICADA' : 'PENDENTE'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5 text-xs text-muted-foreground">{w.observation || '—'}</td>
+                        <td className="px-4 py-2.5 text-right">
+                          {canDelete('ponto') && (
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => deleteWarning(w.id)}>
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </TabsContent>
+      </Tabs>
+
+      {/* Dialog: Lançar Ponto */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Lançar Ponto / Frequência</DialogTitle>
+            <DialogDescription>Registre falta, hora extra, banco de horas ou abono do colaborador.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-1.5">
+              <Label>Colaborador *</Label>
+              <Select value={form.employee_id} onValueChange={(v) => setForm({ ...form, employee_id: v })}>
+                <SelectTrigger><SelectValue placeholder="Selecione o colaborador" /></SelectTrigger>
+                <SelectContent>
+                  {funcionarios.map((f) => (
+                    <SelectItem key={f.id} value={f.id}>{f.nome} ({f.cargo})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Data *</Label>
+                <Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Tipo de Apontamento *</Label>
+                <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {PONTO_STATUS_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Observação / Justificativa</Label>
+              <FastTextarea value={form.observation} onValueChange={(v) => setForm((p) => ({ ...p, observation: v }))} rows={3} placeholder="Detalhes do apontamento, compensação de banco de horas, etc." />
+            </div>
+            <Button className="w-full" onClick={handleCreateAttendance}>Salvar Apontamento</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: Registrar Advertência */}
+      <Dialog open={warningDialogOpen} onOpenChange={setWarningDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Registrar Advertência</DialogTitle>
+            <DialogDescription>Registre advertência disciplinar para o colaborador.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-1.5">
+              <Label>Colaborador *</Label>
+              <Select value={warningForm.employee_id} onValueChange={(v) => setWarningForm({ ...warningForm, employee_id: v })}>
+                <SelectTrigger><SelectValue placeholder="Selecione o colaborador" /></SelectTrigger>
+                <SelectContent>
+                  {funcionarios.map((f) => (
+                    <SelectItem key={f.id} value={f.id}>{f.nome} ({f.cargo})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Data *</Label>
+                <Input type="date" value={warningForm.date} onChange={(e) => setWarningForm({ ...warningForm, date: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Status</Label>
+                <Select value={warningForm.applied} onValueChange={(v) => setWarningForm({ ...warningForm, applied: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="true">Aplicada</SelectItem>
+                    <SelectItem value="false">Pendente</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Motivo *</Label>
+              <FastTextarea value={warningForm.reason} onValueChange={(v) => setWarningForm((p) => ({ ...p, reason: v }))} rows={2} placeholder="Descreva o motivo da advertência" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Observação</Label>
+              <FastTextarea value={warningForm.observation} onValueChange={(v) => setWarningForm((p) => ({ ...p, observation: v }))} rows={2} />
+            </div>
+            <Button className="w-full" onClick={handleCreateWarning}>Salvar Advertência</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

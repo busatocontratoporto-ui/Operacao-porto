@@ -8,45 +8,45 @@ import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { useOfflineSync } from "./hooks/useOfflineSync";
 import AppLayout from "./components/layout/AppLayout";
 import Index from "./pages/Index";
-import FeedbackDetail from "./pages/FeedbackDetail";
 import Configuracoes from "./pages/Configuracoes";
-import Desempenho from "./pages/Desempenho";
-import AutoAvaliacaoFit from "./pages/AutoAvaliacaoFit";
-import AutoAvaliacaoPotencial from "./pages/AutoAvaliacaoPotencial";
 import Admin from "./pages/Admin";
-import CadastroMetas from "./pages/CadastroMetas";
 import Login from "./pages/Login";
 import ResetPassword from "./pages/ResetPassword";
 import NotFound from "./pages/NotFound";
 import FuncionarioProfile from "./pages/FuncionarioProfile";
 import Eventos from "./pages/Eventos";
-import Ausencias from "./pages/Ausencias";
 import Colaboradores from "./pages/Colaboradores";
+import Ponto from "./pages/Ponto";
+import Ferias from "./pages/Ferias";
+import Atestados from "./pages/Atestados";
 import Organograma from "./pages/Organograma";
-import Sucessao from "./pages/Sucessao";
 import EvolucaoContrato from "./pages/EvolucaoContrato";
 import GestaoNotificacoes from "./pages/GestaoNotificacoes";
-import DiscTest from "./pages/DiscTest";
-import Treinamentos from "./pages/Treinamentos";
-import AssessmentHub from "./pages/AssessmentHub";
 import CCO from "./pages/CCO";
-import { InstallPWA } from './components/InstallPWA';
-import { PWAUpdateHandler } from './components/PWAUpdateHandler';
+import { InstallPWA } from "./components/InstallPWA";
+import { PWAUpdateHandler } from "./components/PWAUpdateHandler";
 import { PageGuard } from "./components/auth/PageGuard";
 import { usePermissions } from "./hooks/usePermissions";
 
-class ErrorBoundary extends React.Component<React.PropsWithChildren, { hasError: boolean; errorId: string; errorMessage: string; errorStack: string }> {
+class ErrorBoundary extends React.Component<
+  React.PropsWithChildren,
+  { hasError: boolean; errorId: string; errorMessage: string; errorStack: string }
+> {
   constructor(props: React.PropsWithChildren) {
     super(props);
-    this.state = { hasError: false, errorId: '', errorMessage: '', errorStack: '' };
+    this.state = { hasError: false, errorId: "", errorMessage: "", errorStack: "" };
   }
   static getDerivedStateFromError(error: Error) {
     const errorId = Math.random().toString(36).substring(2, 8).toUpperCase();
-    return { hasError: true, errorId, errorMessage: error?.message || String(error), errorStack: error?.stack || '' };
+    return {
+      hasError: true,
+      errorId,
+      errorMessage: error?.message || String(error),
+      errorStack: error?.stack || "",
+    };
   }
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    // Log do erro para debugging — NÃO exposto ao usuário
-    console.error('[ErrorBoundary] Erro capturado:', error, info);
+    console.error("[ErrorBoundary] Erro capturado:", error, info);
   }
   render() {
     if (this.state.hasError) {
@@ -80,20 +80,19 @@ class ErrorBoundary extends React.Component<React.PropsWithChildren, { hasError:
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 1000 * 60 * 5,       // 5 minutos — não refetch desnecessário
-      gcTime: 1000 * 60 * 10,          // 10 minutos de cache
-      refetchOnWindowFocus: false,      // Não refetch ao focar a janela
-      retry: 1,                         // Apenas 1 retry em caso de erro
+      staleTime: 1000 * 60 * 5,
+      gcTime: 1000 * 60 * 10,
+      refetchOnWindowFocus: false,
+      retry: 1,
     },
   },
 });
 
-// Protege rotas que exigem perfil de administrador ou permissão explícita no módulo Admin
 function AdminGuard({ children }: { children: React.ReactNode }) {
   const { isAdmin, loading } = useAuth();
   const { canView } = usePermissions();
   if (loading) return null;
-  if (!isAdmin && !canView('admin')) return <Navigate to="/" replace />;
+  if (!isAdmin && !canView("admin")) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
 
@@ -117,33 +116,37 @@ function ProtectedRoutes() {
       <Routes>
         <Route element={<AppLayout />}>
           <Route path="/" element={<PageGuard pageKey="dashboard"><Index /></PageGuard>} />
+
+          {/* Gestão de Pessoas */}
           <Route path="/colaboradores" element={<PageGuard pageKey="colaboradores"><Colaboradores /></PageGuard>} />
           <Route path="/cadastro" element={<Navigate to="/colaboradores" replace />} />
-          <Route path="/feedbacks" element={<Navigate to="/desempenho?tab=feedbacks" replace />} />
-          <Route path="/feedbacks/:id" element={<PageGuard pageKey="desempenho"><FeedbackDetail /></PageGuard>} />
-          <Route path="/novo" element={<Navigate to="/desempenho?tab=feedbacks" replace />} />
-          <Route path="/configuracoes" element={<PageGuard pageKey="configuracoes"><Configuracoes /></PageGuard>} />
-          <Route path="/desempenho" element={<PageGuard pageKey="desempenho"><Desempenho /></PageGuard>} />
-          <Route path="/desempenho/avaliacoes" element={<Navigate to="/desempenho?tab=metas" replace />} />
-          <Route path="/desempenho/competencias" element={<Navigate to="/desempenho?tab=fit-cultural" replace />} />
-          <Route path="/desempenho/pdi" element={<Navigate to="/desempenho?tab=pdi" replace />} />
           <Route path="/funcionario/:id" element={<PageGuard pageKey="colaboradores"><FuncionarioProfile /></PageGuard>} />
-          <Route path="/eventos" element={<PageGuard pageKey="eventos"><Eventos /></PageGuard>} />
-          <Route path="/ausencias" element={<PageGuard pageKey="ausencias"><Ausencias /></PageGuard>} />
+          <Route path="/ponto" element={<PageGuard pageKey="ponto"><Ponto /></PageGuard>} />
+          <Route path="/ferias" element={<PageGuard pageKey="ferias"><Ferias /></PageGuard>} />
+          <Route path="/atestados" element={<PageGuard pageKey="atestados"><Atestados /></PageGuard>} />
+          <Route path="/ausencias" element={<Navigate to="/ponto" replace />} />
           <Route path="/organograma" element={<PageGuard pageKey="organograma"><Organograma /></PageGuard>} />
-          <Route path="/sucessao" element={<Navigate to="/desempenho?tab=sucessao" replace />} />
-          <Route path="/evolucao" element={<PageGuard pageKey="evolucao"><EvolucaoContrato /></PageGuard>} />
-          <Route path="/cadastro-metas" element={<PageGuard pageKey="desempenho"><CadastroMetas /></PageGuard>} />
-          <Route path="/notificacoes" element={<PageGuard pageKey="notificacoes"><GestaoNotificacoes /></PageGuard>} />
-          <Route path="/treinamentos" element={<PageGuard pageKey="treinamentos"><Treinamentos /></PageGuard>} />
-          <Route path="/assessments" element={<PageGuard pageKey="treinamentos"><AssessmentHub /></PageGuard>} />
+
+          {/* Operações, Contratos & SSMA */}
           <Route path="/cco" element={<PageGuard pageKey="cco"><CCO /></PageGuard>} />
           <Route path="/cco/:tab" element={<PageGuard pageKey="cco"><CCO /></PageGuard>} />
-          {/* Legacy compat */}
-          <Route path="/disc" element={<PageGuard pageKey="disc"><DiscTest /></PageGuard>} />
-          <Route path="/disc/:id" element={<PageGuard pageKey="disc"><DiscTest /></PageGuard>} />
+          <Route path="/eventos" element={<PageGuard pageKey="eventos"><Eventos /></PageGuard>} />
+          <Route path="/evolucao" element={<PageGuard pageKey="evolucao"><EvolucaoContrato /></PageGuard>} />
+          <Route path="/notificacoes" element={<PageGuard pageKey="notificacoes"><GestaoNotificacoes /></PageGuard>} />
 
+          {/* Sistema */}
+          <Route path="/configuracoes" element={<PageGuard pageKey="configuracoes"><Configuracoes /></PageGuard>} />
           <Route path="/admin" element={<AdminGuard><Admin /></AdminGuard>} />
+
+          {/* Redirecionamento limpo de URLs antigas desativadas */}
+          <Route path="/desempenho/*" element={<Navigate to="/colaboradores" replace />} />
+          <Route path="/feedbacks/*" element={<Navigate to="/colaboradores" replace />} />
+          <Route path="/treinamentos" element={<Navigate to="/eventos" replace />} />
+          <Route path="/assessments" element={<Navigate to="/colaboradores" replace />} />
+          <Route path="/disc/*" element={<Navigate to="/colaboradores" replace />} />
+          <Route path="/sucessao" element={<Navigate to="/organograma" replace />} />
+          <Route path="/cadastro-metas" element={<Navigate to="/colaboradores" replace />} />
+          <Route path="/novo" element={<Navigate to="/colaboradores" replace />} />
         </Route>
         <Route path="*" element={<NotFound />} />
       </Routes>
@@ -163,10 +166,6 @@ const App = () => (
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/reset-password" element={<ResetPassword />} />
-            <Route path="/autoavaliacao-fit-cultural" element={<AutoAvaliacaoFit />} />
-            <Route path="/autoavaliacao-potencial" element={<AutoAvaliacaoPotencial />} />
-            <Route path="/assessment/:type" element={<AssessmentHub />} />
-            <Route path="/assessment/:type/:id" element={<AssessmentHub />} />
             <Route path="/*" element={<ProtectedRoutes />} />
           </Routes>
         </AuthProvider>

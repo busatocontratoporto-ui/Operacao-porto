@@ -50,7 +50,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
-import { PAGES, PAGE_GROUPS, CCO_PAGE_KEYS } from '@/lib/permissions';
+import { PAGES, PAGE_GROUPS, CCO_PAGE_KEYS, RH_AUSENCIAS_PAGE_KEYS } from '@/lib/permissions';
 import { logAudit } from '@/lib/audit';
 import { DEPARTAMENTOS } from '@/lib/departments';
 
@@ -88,7 +88,9 @@ export default function Admin() {
   const [moduleFilter, setModuleFilter] = useState<string>('TODOS');
 
   // Aba Matriz por Módulo
-  const [activeMatrixModule, setActiveMatrixModule] = useState<string>(PAGE_GROUPS[4].id); // Começa destacando CCO ou primeiro módulo
+  const [activeMatrixModule, setActiveMatrixModule] = useState<string>(
+    PAGE_GROUPS.find((g) => g.id === 'gestao_pessoas')?.id || PAGE_GROUPS[0].id
+  );
   const [savingMatrixUserId, setSavingMatrixUserId] = useState<string | null>(null);
 
   const [creating, setCreating] = useState(false);
@@ -203,11 +205,17 @@ export default function Admin() {
           const hasCustomPerms = Object.keys(indivPerms).length > 0;
           const mergedPerms: Record<string, PermEntry> = { ...baseProfPerms, ...indivPerms };
 
-          // Expand fallback legado 'cco' se ainda não tiver granularidade salva
+          // Expand fallback legado 'cco' e 'ausencias' se ainda não tiver granularidade salva
           const hasGranularCco = CCO_PAGE_KEYS.some((k) => mergedPerms[k] !== undefined);
           if (!hasGranularCco && mergedPerms['cco']) {
             CCO_PAGE_KEYS.forEach((k) => {
               mergedPerms[k] = { ...mergedPerms['cco'], page: k };
+            });
+          }
+          const hasGranularAusencias = RH_AUSENCIAS_PAGE_KEYS.some((k) => mergedPerms[k] !== undefined);
+          if (!hasGranularAusencias && mergedPerms['ausencias']) {
+            RH_AUSENCIAS_PAGE_KEYS.forEach((k) => {
+              mergedPerms[k] = { ...mergedPerms['ausencias'], page: k };
             });
           }
 
@@ -348,15 +356,10 @@ export default function Admin() {
           const isDeptAccount = !!newUser.departamento;
           const deptAllowedKeys = [
             'colaboradores',
+            'ponto',
+            'ferias',
+            'atestados',
             'organograma',
-            'ausencias',
-            'desempenho',
-            'feedbacks',
-            'novo_feedback',
-            'treinamentos',
-            'disc',
-            'mbti',
-            'bigfive',
             'configuracoes',
           ];
           const defaultPerms = PAGES.map((p) => ({
@@ -425,11 +428,17 @@ export default function Admin() {
       PAGES.some((p) => p.legacyAlias === 'cco' && profMap.has(p.key));
     const legacyCco = (indivMap.get('cco') || profMap.get('cco')) as PermEntry | undefined;
 
+    const hasGranularAusencias =
+      PAGES.some((p) => p.legacyAlias === 'ausencias' && indivMap.has(p.key)) ||
+      PAGES.some((p) => p.legacyAlias === 'ausencias' && profMap.has(p.key));
+    const legacyAusencias = (indivMap.get('ausencias') || profMap.get('ausencias')) as PermEntry | undefined;
+
     const perms: PermEntry[] = PAGES.map((p) => {
       const existing =
         indivMap.get(p.key) ||
         profMap.get(p.key) ||
-        (!hasGranularCco && p.legacyAlias === 'cco' ? legacyCco : undefined);
+        (!hasGranularCco && p.legacyAlias === 'cco' ? legacyCco : undefined) ||
+        (!hasGranularAusencias && p.legacyAlias === 'ausencias' ? legacyAusencias : undefined);
       return {
         page: p.key,
         can_view: existing?.can_view ?? false,
@@ -472,7 +481,16 @@ export default function Admin() {
       can_delete: ccoPerms.some((p) => p.can_delete),
     };
 
-    const payload = [...permsList, ccoAggregate].map((p) => ({
+    const rhPerms = permsList.filter((p) => (RH_AUSENCIAS_PAGE_KEYS as readonly string[]).includes(p.page));
+    const ausenciasAggregate: PermEntry = {
+      page: 'ausencias',
+      can_view: rhPerms.some((p) => p.can_view),
+      can_create: rhPerms.some((p) => p.can_create),
+      can_edit: rhPerms.some((p) => p.can_edit),
+      can_delete: rhPerms.some((p) => p.can_delete),
+    };
+
+    const payload = [...permsList, ccoAggregate, ausenciasAggregate].map((p) => ({
       user_id: targetUser.id,
       page: p.page,
       can_view: p.can_view,

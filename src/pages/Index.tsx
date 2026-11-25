@@ -14,8 +14,7 @@ import {
 } from 'recharts';
 
 // ─── Types ───
-interface Func { id: string; nome: string; cargo: string; departamento: string; foto_url: string; feedbacks_recebidos: number; feedbacks_resolvidos: number; turno: string; letra: string; data_admissao: string; }
-interface FeedbackRow { id: string; setor: string; status: string; prioridade: string; criado_em: string; autor: string; }
+interface Func { id: string; nome: string; cargo: string; departamento: string; foto_url: string; turno: string; letra: string; data_admissao: string | null; }
 interface AttendanceRow { id: string; employee_id: string; date: string; status: string; created_at?: string; }
 interface WarningRow { id: string; employee_id: string; date: string; applied: boolean; created_at?: string; }
 interface EventRow { id: string; event_date: string; involved_name: string; created_at?: string; }
@@ -50,7 +49,6 @@ export default function Index() {
   const { isAdmin } = useAuth();
   const [period, setPeriod] = useState<PeriodRange>(getPortoPeriod(0));
   const [funcionarios, setFuncionarios] = useState<Func[]>([]);
-  const [feedbacks, setFeedbacks] = useState<FeedbackRow[]>([]);
   const [attendance, setAttendance] = useState<AttendanceRow[]>([]);
   const [warnings, setWarnings] = useState<WarningRow[]>([]);
   const [events, setEvents] = useState<EventRow[]>([]);
@@ -70,9 +68,8 @@ export default function Index() {
       const dayStartIso = `${period.start}T00:00:00.000Z`;
       const dayEndIso = `${period.end}T23:59:59.999Z`;
 
-      const [fRes, fbRes, attRes, warnRes, evtRes, ccoMaintRes, ccoThirdRes, auditRes] = await Promise.all([
-        supabase.from('funcionarios').select('id, nome, cargo, departamento, foto_url, feedbacks_recebidos, feedbacks_resolvidos, turno, letra, data_admissao').order('nome'),
-        supabase.from('feedbacks').select('id, setor, status, prioridade, criado_em, autor'),
+      const [fRes, attRes, warnRes, evtRes, ccoMaintRes, ccoThirdRes, auditRes] = await Promise.all([
+        supabase.from('funcionarios').select('id, nome, cargo, departamento, foto_url, turno, letra, data_admissao').order('nome'),
         supabase.from('daily_attendance').select('id, employee_id, date, status, created_at').gte('date', period.start).lte('date', period.end),
         supabase.from('employee_warnings').select('id, employee_id, date, applied, created_at').gte('date', period.start).lte('date', period.end),
         supabase.from('events').select('id, event_date, involved_name, created_at').gte('event_date', period.start).lte('event_date', period.end),
@@ -82,7 +79,6 @@ export default function Index() {
       ]);
 
       setFuncionarios((fRes.data || []) as Func[]);
-      setFeedbacks((fbRes.data || []) as FeedbackRow[]);
       setAttendance((attRes.data || []) as AttendanceRow[]);
       setWarnings((warnRes.data || []) as WarningRow[]);
       setEvents((evtRes.data || []) as EventRow[]);
@@ -100,15 +96,6 @@ export default function Index() {
   }, [employeeSearch, funcionarios]);
 
   const sel = selectedEmployee;
-  
-  const periodFeedbacks = useMemo(() => {
-    let fbs = feedbacks.filter(f => {
-      const d = new Date(f.criado_em).toISOString().split('T')[0];
-      return d >= period.start && d <= period.end;
-    });
-    if (sel) fbs = fbs.filter(f => f.autor.trim().toLowerCase() === sel.nome.trim().toLowerCase());
-    return fbs;
-  }, [feedbacks, period, sel]);
 
   const filteredAttendance = useMemo(() => {
     if (!sel) return attendance;
@@ -130,10 +117,10 @@ export default function Index() {
   // ─── REAL SYSTEM MOVEMENT METRICS (100% REAL DATA) ───
   const ccoTotal = ccoMaint.length + ccoThird.length;
   const rhTotal = filteredAttendance.length + filteredWarnings.length;
+  const atestadosCount = filteredAttendance.filter(a => a.status === 'atestado' || a.status === 'afastamento').length;
   const adminTotal = filteredEvents.length + auditLogs.length;
-  const fbTotal = periodFeedbacks.length;
 
-  const totalMovimentacoes = ccoTotal + rhTotal + adminTotal + fbTotal;
+  const totalMovimentacoes = ccoTotal + rhTotal + adminTotal;
 
   // Days in period range for daily average calculation
   const periodDays = useMemo(() => {
@@ -168,10 +155,6 @@ export default function Index() {
       const d = w.date || (w.created_at ? w.created_at.split('T')[0] : '');
       if (dataByDate[d]) { dataByDate[d].RH += 1; dataByDate[d].Total += 1; }
     });
-    feedbacks.forEach(f => {
-      const d = f.criado_em ? f.criado_em.split('T')[0] : '';
-      if (dataByDate[d]) { dataByDate[d].RH += 1; dataByDate[d].Total += 1; }
-    });
     ccoMaint.forEach(m => {
       const d = m.created_at ? m.created_at.split('T')[0] : '';
       if (dataByDate[d]) { dataByDate[d].CCO += 1; dataByDate[d].Total += 1; }
@@ -190,18 +173,11 @@ export default function Index() {
     });
 
     return Object.values(dataByDate);
-  }, [filteredAttendance, filteredWarnings, feedbacks, ccoMaint, ccoThird, filteredEvents, auditLogs]);
+  }, [filteredAttendance, filteredWarnings, ccoMaint, ccoThird, filteredEvents, auditLogs]);
 
   // REAL Accounts Ranking Chart Data
   const topAccountsData = useMemo(() => {
     const userCounts: Record<string, number> = {};
-
-    feedbacks.forEach(f => {
-      if (f.autor) {
-        const name = f.autor.trim();
-        userCounts[name] = (userCounts[name] || 0) + 1;
-      }
-    });
 
     ccoMaint.forEach(m => {
       if (m.motorista) {
@@ -228,11 +204,7 @@ export default function Index() {
       .map(([name, count]) => ({ name: name.length > 16 ? `${name.substring(0, 14)}...` : name, Lançamentos: count }))
       .sort((a, b) => b.Lançamentos - a.Lançamentos)
       .slice(0, 8);
-  }, [feedbacks, ccoMaint, ccoThird, filteredEvents]);
-
-  const fbPendentesCount = useMemo(() => {
-    return periodFeedbacks.filter(f => f.status !== 'resolvido').length;
-  }, [periodFeedbacks]);
+  }, [ccoMaint, ccoThird, filteredEvents]);
 
   const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
 
@@ -243,8 +215,8 @@ export default function Index() {
       issues.push({ type: 'warning', title: 'Conexão Offline', desc: 'Dispositivo em modo cache offline. Operação local mantida.' });
     }
 
-    if (fbPendentesCount > 0) {
-      issues.push({ type: 'warning', title: 'Feedbacks Pendentes', desc: `${fbPendentesCount} feedback(s) aguardando resolução pela equipe.` });
+    if (atestadosCount > 0) {
+      issues.push({ type: 'warning', title: 'Atestados / Afastamentos', desc: `${atestadosCount} registro(s) médico(s) lançado(s) no período.` });
     }
 
     if (filteredEvents.length > 0) {
@@ -265,7 +237,7 @@ export default function Index() {
     } else if (hasWarnings) {
       overallState = 'warning';
       statusText = 'SISTEMA OPERACIONAL COM PENDÊNCIAS';
-      statusSubtitle = 'A infraestrutura do banco de dados e APIs está saudável. Registradas pendências operacionais no período:';
+      statusSubtitle = 'A infraestrutura do banco de dados e APIs está saudável. Registradas ocorrências operacionais no período:';
     }
 
     return {
@@ -275,7 +247,7 @@ export default function Index() {
       issues,
       totalIssuesCount: issues.length
     };
-  }, [isOnline, fbPendentesCount, filteredEvents]);
+  }, [isOnline, atestadosCount, filteredEvents]);
 
 
   if (loading) {
@@ -316,7 +288,7 @@ export default function Index() {
           <span className="text-emerald-500">MOVIMENTAÇÕES NO PERÍODO: {totalMovimentacoes}</span>
           <span className="text-blue-500">CCO & FROTA: {ccoTotal}</span>
           <span className="text-emerald-500">GESTÃO RH: {rhTotal}</span>
-          <span className="text-amber-500">FEEDBACKS: {fbTotal}</span>
+          <span className="text-amber-500">ATESTADOS: {atestadosCount}</span>
           <span className="text-rose-500">AUDITORIA & SSMA: {adminTotal}</span>
           <span>LAST UPDATE: {new Date().toISOString().substring(11,19)}Z</span>
         </div>

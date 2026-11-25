@@ -1,4 +1,4 @@
-import { Bell, Search, AlertTriangle, ShieldAlert, MessageSquare, Calendar, Clock, Moon, Sun, LogOut, User, Settings, Building2 } from 'lucide-react';
+import { Bell, Search, AlertTriangle, ShieldAlert, Clock, Moon, Sun, LogOut, Settings, Building2, Stethoscope, Users } from 'lucide-react';
 import busatoGlobo from '@/assets/busato-globo.png';
 import { useTheme } from '@/components/ThemeProvider';
 import { DEPARTAMENTOS } from '@/lib/departments';
@@ -16,7 +16,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 
 interface AlertItem {
   id: string;
-  type: 'warning' | 'event' | 'feedback' | 'absence' | 'overtime';
+  type: 'warning' | 'event' | 'medical' | 'absence';
   title: string;
   description: string;
   date: string;
@@ -29,6 +29,9 @@ export default function TopBar() {
   const navigate = useNavigate();
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [open, setOpen] = useState(false);
+  const [empQuery, setEmpQuery] = useState('');
+  const [empResults, setEmpResults] = useState<{ id: string; nome: string; cargo: string }[]>([]);
+  const [empOpen, setEmpOpen] = useState(false);
   const [seen, setSeen] = useState<Set<string>>(() => {
     try {
       const saved = localStorage.getItem('seen_alerts');
@@ -36,7 +39,7 @@ export default function TopBar() {
     } catch { return new Set(); }
   });
   const { theme, setTheme } = useTheme();
-  const { user, isAdmin, userDepartment, effectiveDepartment, isDepartmentLocked, setEffectiveDepartment, signOut } = useAuth();
+  const { user, isAdmin, userDepartment, effectiveDepartment, setEffectiveDepartment, signOut } = useAuth();
   
   let userName = 'Usuário';
   if (user?.user_metadata?.full_name && typeof user.user_metadata.full_name === 'string') {
@@ -48,27 +51,42 @@ export default function TopBar() {
   let initials = 'US';
   try {
     initials = userName.split(' ').map((n: string) => n?.[0]).filter(Boolean).join('').substring(0, 2).toUpperCase();
-  } catch (e) {
-    console.error('Error generating initials:', e);
+  } catch {
+    // ignore
   }
 
   useEffect(() => {
     fetchAlerts();
   }, []);
 
+  useEffect(() => {
+    const q = empQuery.trim();
+    if (q.length < 2) {
+      setEmpResults([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      const { data } = await supabase
+        .from('funcionarios')
+        .select('id, nome, cargo')
+        .ilike('nome', `%${q}%`)
+        .limit(8);
+      setEmpResults((data || []) as { id: string; nome: string; cargo: string }[]);
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [empQuery]);
+
   async function fetchAlerts() {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const since = thirtyDaysAgo.toISOString().slice(0, 10);
 
-    const [warnRes, evtRes, fbRes, attRes] = await Promise.all([
+    const [warnRes, evtRes, attRes] = await Promise.all([
       supabase.from('employee_warnings').select('id, date, reason, employee_id, applied').gte('date', since).order('date', { ascending: false }).limit(20),
       supabase.from('events').select('id, event_date, description, involved_name').gte('event_date', since).order('event_date', { ascending: false }).limit(20),
-      supabase.from('feedbacks').select('id, titulo, status, criado_em, autor').in('status', ['novo', 'em_analise']).order('criado_em', { ascending: false }).limit(20),
-      supabase.from('daily_attendance').select('id, date, status, employee_id').gte('date', since).in('status', ['falta', 'falta_injustificada']).order('date', { ascending: false }).limit(20),
+      supabase.from('daily_attendance').select('id, date, status, employee_id, cid, dias_afastamento').gte('date', since).in('status', ['falta', 'falta_injustificada', 'atestado', 'afastamento']).order('date', { ascending: false }).limit(30),
     ]);
 
-    // Get employee names for warnings and absences
     const empIds = new Set<string>();
     warnRes.data?.forEach((w: { employee_id: string }) => empIds.add(w.employee_id));
     attRes.data?.forEach((a: { employee_id: string }) => empIds.add(a.employee_id));
@@ -81,7 +99,6 @@ export default function TopBar() {
 
     const items: AlertItem[] = [];
 
-    // Warnings
     warnRes.data?.forEach((w: { id: string; employee_id: string; applied: boolean; reason?: string; date: string }) => {
       items.push({
         id: `warn-${w.id}`,
@@ -89,18 +106,17 @@ export default function TopBar() {
         title: `Advertência ${w.applied ? 'aplicada' : 'pendente'}`,
         description: `${nameMap[w.employee_id] || 'Colaborador'} — ${w.reason || 'Sem motivo'}`,
         date: w.date,
-        link: undefined,
+        link: '/ponto',
         icon: ShieldAlert,
         color: 'text-destructive',
       });
     });
 
-    // Events
     evtRes.data?.forEach((e: { id: string; event_date: string; description?: string; involved_name: string }) => {
       items.push({
         id: `evt-${e.id}`,
         type: 'event',
-        title: 'Evento registrado',
+        title: 'Evento SSMA registrado',
         description: `${e.involved_name} — ${e.description?.slice(0, 60) || ''}`,
         date: e.event_date,
         link: '/eventos',
@@ -109,34 +125,32 @@ export default function TopBar() {
       });
     });
 
-    // Pending feedbacks
-    fbRes.data?.forEach((f: { id: string; titulo: string; status: string; autor: string; criado_em?: string }) => {
-      items.push({
-        id: `fb-${f.id}`,
-        type: 'feedback',
-        title: `Feedback ${f.status === 'novo' ? 'novo' : 'em análise'}`,
-        description: `${f.titulo} — ${f.autor}`,
-        date: f.criado_em?.slice(0, 10),
-        link: `/feedbacks/${f.id}`,
-        icon: MessageSquare,
-        color: 'text-primary',
-      });
+    attRes.data?.forEach((a: { id: string; employee_id: string; date: string; status: string; cid?: string; dias_afastamento?: number }) => {
+      if (a.status === 'atestado' || a.status === 'afastamento') {
+        items.push({
+          id: `med-${a.id}`,
+          type: 'medical',
+          title: a.status === 'afastamento' ? 'Afastamento médico' : 'Atestado registrado',
+          description: `${nameMap[a.employee_id] || 'Colaborador'}${a.dias_afastamento ? ` (${a.dias_afastamento}d)` : ''}${a.cid ? ` • CID ${a.cid}` : ''}`,
+          date: a.date,
+          link: '/atestados',
+          icon: Stethoscope,
+          color: 'text-blue-600',
+        });
+      } else {
+        items.push({
+          id: `abs-${a.id}`,
+          type: 'absence',
+          title: 'Falta injustificada',
+          description: nameMap[a.employee_id] || 'Colaborador',
+          date: a.date,
+          link: '/ponto',
+          icon: Clock,
+          color: 'text-destructive',
+        });
+      }
     });
 
-    // Absences (unexcused)
-    attRes.data?.forEach((a: { id: string; employee_id: string; date: string }) => {
-      items.push({
-        id: `abs-${a.id}`,
-        type: 'absence',
-        title: 'Falta injustificada',
-        description: nameMap[a.employee_id] || 'Colaborador',
-        date: a.date,
-        icon: Clock,
-        color: 'text-destructive',
-      });
-    });
-
-    // Sort by date desc
     items.sort((a, b) => b.date.localeCompare(a.date));
     setAlerts(items);
   }
@@ -149,9 +163,7 @@ export default function TopBar() {
       const newSeen = new Set(seen);
       alerts.forEach(a => newSeen.add(a.id));
       setSeen(newSeen);
-      try { localStorage.setItem('seen_alerts', JSON.stringify(Array.from(newSeen))); } catch {
-        // localStorage pode estar indisponível em modo restrito
-      }
+      try { localStorage.setItem('seen_alerts', JSON.stringify(Array.from(newSeen))); } catch {}
     }
   }
 
@@ -169,17 +181,44 @@ export default function TopBar() {
         <span className="font-semibold text-sm">Busato</span>
       </div>
 
-      <div className="hidden md:flex items-center gap-2 bg-muted rounded-lg px-3 py-2 w-80">
-        <Search className="w-4 h-4 text-muted-foreground" />
-        <input
-          type="text"
-          placeholder="Buscar feedbacks..."
-          className="bg-transparent text-sm outline-none w-full placeholder:text-muted-foreground"
-        />
+      <div className="hidden md:block relative w-80">
+        <div className="flex items-center gap-2 bg-muted rounded-lg px-3 py-2">
+          <Search className="w-4 h-4 text-muted-foreground" />
+          <input
+            type="text"
+            value={empQuery}
+            onChange={(e) => { setEmpQuery(e.target.value); setEmpOpen(true); }}
+            onFocus={() => setEmpOpen(true)}
+            onBlur={() => setTimeout(() => setEmpOpen(false), 180)}
+            placeholder="Buscar colaborador pelo nome..."
+            className="bg-transparent text-sm outline-none w-full placeholder:text-muted-foreground"
+          />
+        </div>
+        {empOpen && empResults.length > 0 && (
+          <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-lg shadow-xl z-50 overflow-hidden">
+            {empResults.map((emp) => (
+              <button
+                key={emp.id}
+                type="button"
+                onMouseDown={() => {
+                  setEmpQuery('');
+                  setEmpOpen(false);
+                  navigate(`/funcionario/${emp.id}`);
+                }}
+                className="w-full text-left px-3 py-2 hover:bg-muted transition-colors flex items-center gap-2.5 border-b border-border/50 last:border-0"
+              >
+                <Users className="w-3.5 h-3.5 text-primary shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold truncate text-foreground">{emp.nome}</p>
+                  <p className="text-[10px] text-muted-foreground truncate">{emp.cargo}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">
-        {/* Indicador / Seletor de Departamento */}
         {isAdmin ? (
           <div className="hidden sm:flex items-center gap-1.5 bg-background/60 border border-border/80 rounded-lg px-2 py-1 shadow-sm">
             <Building2 className="w-3.5 h-3.5 text-primary" />
@@ -225,8 +264,8 @@ export default function TopBar() {
           </PopoverTrigger>
           <PopoverContent align="end" className="w-96 p-0">
             <div className="px-4 py-3 border-b border-border">
-              <h3 className="font-semibold text-sm">Notificações</h3>
-              <p className="text-xs text-muted-foreground">Últimos 30 dias</p>
+              <h3 className="font-semibold text-sm">Notificações Operacionais</h3>
+              <p className="text-xs text-muted-foreground">Últimos 30 dias (Ponto, Atestados e SSMA)</p>
             </div>
             <ScrollArea className="max-h-[400px]">
               {alerts.length === 0 ? (
@@ -243,7 +282,9 @@ export default function TopBar() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-semibold">{alert.title}</span>
-                          <Badge variant="outline" className="text-[9px] px-1 py-0">{alert.type === 'warning' ? 'Adv.' : alert.type === 'event' ? 'Evento' : alert.type === 'feedback' ? 'FB' : 'Falta'}</Badge>
+                          <Badge variant="outline" className="text-[9px] px-1 py-0">
+                            {alert.type === 'warning' ? 'Adv.' : alert.type === 'event' ? 'SSMA' : alert.type === 'medical' ? 'Atestado' : 'Ponto'}
+                          </Badge>
                         </div>
                         <p className="text-xs text-muted-foreground truncate mt-0.5">{alert.description}</p>
                         <p className="text-[10px] text-muted-foreground/70 mt-0.5">{new Date(alert.date + 'T00:00:00').toLocaleDateString('pt-BR')}</p>

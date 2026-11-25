@@ -1,21 +1,22 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { Activity, Users, Target, Settings, AlertTriangle, CalendarDays, MoreHorizontal, Radio } from 'lucide-react';
+import { Activity, Users, Clock, Palmtree, Stethoscope, Settings, AlertTriangle, MoreHorizontal, Radio } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/hooks/usePermissions';
 
 const mainItems = [
-  { to: '/', icon: Activity, label: 'Movimentações', key: 'dashboard' },
+  { to: '/', icon: Activity, label: 'Painel', key: 'dashboard' },
   { to: '/colaboradores', icon: Users, label: 'Pessoas', key: 'colaboradores' },
-  { to: '/desempenho', icon: Target, label: 'Gestão', key: 'desempenho' },
-  { to: '/ausencias', icon: CalendarDays, label: 'Ponto', key: 'ausencias' },
+  { to: '/ponto', icon: Clock, label: 'Ponto', key: 'ponto' },
+  { to: '/ferias', icon: Palmtree, label: 'Férias', key: 'ferias' },
 ];
 
 const moreItems = [
+  { to: '/atestados', icon: Stethoscope, label: 'Atestados', key: 'atestados' },
   { to: '/cco', icon: Radio, label: 'CCO', key: 'cco' },
   { to: '/eventos', icon: AlertTriangle, label: 'Eventos SSMA', key: 'eventos' },
-  { to: '/configuracoes', icon: Settings, label: 'Configuras', key: 'configuracoes' },
+  { to: '/configuracoes', icon: Settings, label: 'Configurações', key: 'configuracoes' },
 ];
 
 export default function MobileNav() {

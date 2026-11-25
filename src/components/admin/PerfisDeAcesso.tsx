@@ -10,7 +10,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 
-import { PAGES, PAGE_GROUPS } from '@/lib/permissions';
+import { PAGES, PAGE_GROUPS, RH_AUSENCIAS_PAGE_KEYS } from '@/lib/permissions';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface AccessProfile {
@@ -105,9 +105,13 @@ export function PerfisDeAcesso({ onProfilesChanged }: { onProfilesChanged?: () =
     const permsMap = new Map((data || []).map((p: any) => [p.page, p]));
     const legacyCco = permsMap.get('cco') as ProfilePermission | undefined;
     const hasGranularCco = PAGES.some((p) => p.legacyAlias === 'cco' && permsMap.has(p.key));
+    const legacyAusencias = permsMap.get('ausencias') as ProfilePermission | undefined;
+    const hasGranularAusencias = PAGES.some((p) => p.legacyAlias === 'ausencias' && permsMap.has(p.key));
 
     const defaultPerms = PAGES.map((p) => {
-      const existing = (permsMap.get(p.key) || (!hasGranularCco && p.legacyAlias === 'cco' ? legacyCco : undefined)) as
+      const existing = (permsMap.get(p.key) ||
+        (!hasGranularCco && p.legacyAlias === 'cco' ? legacyCco : undefined) ||
+        (!hasGranularAusencias && p.legacyAlias === 'ausencias' ? legacyAusencias : undefined)) as
         | ProfilePermission
         | undefined;
       return {
@@ -182,7 +186,7 @@ export function PerfisDeAcesso({ onProfilesChanged }: { onProfilesChanged?: () =
 
     await supabase.from('access_profile_permissions').delete().eq('profile_id', profileId);
 
-    // Inclui também a chave legada 'cco' sincronizada caso alguma sub-aba do CCO esteja habilitada
+    // Inclui também as chaves legadas 'cco' e 'ausencias' sincronizadas
     const ccoPerms = editingPerms.filter((p) => p.page.startsWith('cco_'));
     const ccoAggregate = {
       page: 'cco',
@@ -192,7 +196,16 @@ export function PerfisDeAcesso({ onProfilesChanged }: { onProfilesChanged?: () =
       can_delete: ccoPerms.some((p) => p.can_delete),
     };
 
-    const toInsert = [...editingPerms, ccoAggregate].map((p) => ({
+    const rhPerms = editingPerms.filter((p) => (RH_AUSENCIAS_PAGE_KEYS as readonly string[]).includes(p.page));
+    const ausenciasAggregate = {
+      page: 'ausencias',
+      can_view: rhPerms.some((p) => p.can_view),
+      can_create: rhPerms.some((p) => p.can_create),
+      can_edit: rhPerms.some((p) => p.can_edit),
+      can_delete: rhPerms.some((p) => p.can_delete),
+    };
+
+    const toInsert = [...editingPerms, ccoAggregate, ausenciasAggregate].map((p) => ({
       profile_id: profileId,
       ...p,
     }));
@@ -245,6 +258,7 @@ export function PerfisDeAcesso({ onProfilesChanged }: { onProfilesChanged?: () =
           const perms = profilePermsSummary[p.id] || [];
           const permMap = new Map(perms.map((x) => [x.page, x]));
           const hasGranularCco = PAGES.some((pg) => pg.legacyAlias === 'cco' && permMap.has(pg.key));
+          const hasGranularAusencias = PAGES.some((pg) => pg.legacyAlias === 'ausencias' && permMap.has(pg.key));
 
           return (
             <div key={p.id} className="glass-card rounded-xl p-5 space-y-4 border border-border/60 flex flex-col justify-between">
@@ -263,7 +277,9 @@ export function PerfisDeAcesso({ onProfilesChanged }: { onProfilesChanged?: () =
                   {PAGE_GROUPS.map((g) => {
                     const countAllowed = g.pages.filter((pg) => {
                       const entry =
-                        permMap.get(pg.key) || (!hasGranularCco && pg.legacyAlias === 'cco' ? permMap.get('cco') : undefined);
+                        permMap.get(pg.key) ||
+                        (!hasGranularCco && pg.legacyAlias === 'cco' ? permMap.get('cco') : undefined) ||
+                        (!hasGranularAusencias && pg.legacyAlias === 'ausencias' ? permMap.get('ausencias') : undefined);
                       return entry?.can_view === true;
                     }).length;
                     if (countAllowed === 0) return null;

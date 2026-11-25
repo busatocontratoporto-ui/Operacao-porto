@@ -24,32 +24,13 @@ export const PAGE_GROUPS: PageGroupDef[] = [
   {
     id: 'gestao_pessoas',
     module: 'Gestão de Pessoas',
-    description: 'Cadastro de colaboradores, organograma e controle de ponto/férias',
+    description: 'Cadastro de colaboradores, ponto/banco de horas, férias, atestados e organograma',
     pages: [
       { key: 'colaboradores', label: 'Colaboradores', path: '/colaboradores' },
+      { key: 'ponto', label: 'Ponto & Banco de Horas', path: '/ponto', legacyAlias: 'ausencias' },
+      { key: 'ferias', label: 'Férias & Vencimentos', path: '/ferias', legacyAlias: 'ausencias' },
+      { key: 'atestados', label: 'Atestados Médicos', path: '/atestados', legacyAlias: 'ausencias' },
       { key: 'organograma', label: 'Organograma', path: '/organograma' },
-      { key: 'ausencias', label: 'Ponto & Férias', path: '/ausencias' },
-    ],
-  },
-  {
-    id: 'lideranca_gestao',
-    module: 'Liderança & Gestão',
-    description: 'Painel do gestor, avaliações, feedbacks e planos de desenvolvimento',
-    pages: [
-      { key: 'desempenho', label: 'Painel do Gestor', path: '/desempenho' },
-      { key: 'feedbacks', label: 'Feedbacks', path: '/desempenho?tab=feedbacks' },
-      { key: 'novo_feedback', label: 'Novo Feedback', path: '/desempenho?tab=feedbacks' },
-    ],
-  },
-  {
-    id: 'talentos_comportamento',
-    module: 'Talentos & Comportamento',
-    description: 'Central de assessments e testes comportamentais (DISC, MBTI, Big Five)',
-    pages: [
-      { key: 'treinamentos', label: 'Central de Assessments', path: '/treinamentos' },
-      { key: 'disc', label: 'Teste DISC', path: '/disc' },
-      { key: 'mbti', label: 'MBTI', path: '/assessments' },
-      { key: 'bigfive', label: 'Big Five', path: '/assessments' },
     ],
   },
   {
@@ -69,9 +50,9 @@ export const PAGE_GROUPS: PageGroupDef[] = [
   {
     id: 'operacoes',
     module: 'Operações & Contratos',
-    description: 'SSMA, evolução de contratos e gestão de notificações/multas',
+    description: 'SSMA, treinamentos normativos, evolução de contratos e gestão de notificações/multas',
     pages: [
-      { key: 'eventos', label: 'SSMA', path: '/eventos' },
+      { key: 'eventos', label: 'SSMA & Treinamentos', path: '/eventos' },
       { key: 'evolucao', label: 'Contratos', path: '/evolucao' },
       { key: 'notificacoes', label: 'Notificações/Multas', path: '/notificacoes' },
     ],
@@ -98,3 +79,5 @@ export const CCO_PAGE_KEYS = [
   'cco_relatorios',
   'cco_cadastros',
 ];
+
+export const RH_AUSENCIAS_PAGE_KEYS = ['ponto', 'ferias', 'atestados'];
