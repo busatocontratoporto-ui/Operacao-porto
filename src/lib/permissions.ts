@@ -47,6 +47,14 @@ export const PAGE_GROUPS: PageGroupDef[] = [
     ],
   },
   {
+    id: 'medicao_porto',
+    module: 'Medição Porto',
+    description: 'Fechamento mensal (ciclo 21 a 20): Lançamentos (BD), DF (Aderência), BD Vale e Memória de Cálculo',
+    pages: [
+      { key: 'medicao_porto', label: 'Medição Porto (Lançamentos, DF, BD Vale & Memória)', path: '/medicao-porto', legacyAlias: 'evolucao' },
+    ],
+  },
+  {
     id: 'operacoes',
     module: 'Operações & Contratos',
     description: 'SSMA, treinamentos normativos, evolução de contratos e gestão de notificações/multas',

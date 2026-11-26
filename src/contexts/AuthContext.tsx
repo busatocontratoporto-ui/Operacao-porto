@@ -35,7 +35,7 @@ const AuthContext = createContext<AuthContextType>({
 
 const ALL_APP_PAGES = [
   'dashboard', 'colaboradores', 'ponto', 'ferias', 'atestados', 'ausencias',
-  'eventos', 'evolucao', 'notificacoes', 'configuracoes',
+  'medicao_porto', 'eventos', 'evolucao', 'notificacoes', 'configuracoes',
   'cco', 'cco_painel', 'cco_programacao', 'cco_operacao',
   'cco_corretivas', 'cco_medicao', 'cco_relatorios', 'cco_cadastros', 'admin',
 ];

@@ -30,6 +30,7 @@ supabase/.temp/
 # Local spreadsheets, scratch & temporary Vite/debug files
 PORTO11.xlsx
 COLABORADORES PORTO.xlsx
+MEMORIA DE CALCULO - NOVEMBRO.xlsx
 scratch/
 apply_migrations.cjs
 check_project.cjs

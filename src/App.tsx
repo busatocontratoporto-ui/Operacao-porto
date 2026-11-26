@@ -23,6 +23,7 @@ import Atestados from "./pages/Atestados";
 import EvolucaoContrato from "./pages/EvolucaoContrato";
 import GestaoNotificacoes from "./pages/GestaoNotificacoes";
 import CCO from "./pages/CCO";
+import MedicaoPorto from "./pages/MedicaoPorto";
 import { InstallPWA } from "./components/InstallPWA";
 import { PWAUpdateHandler } from "./components/PWAUpdateHandler";
 import { PageGuard } from "./components/auth/PageGuard";
@@ -128,6 +129,8 @@ function ProtectedRoutes() {
           <Route path="/organograma" element={<Navigate to="/colaboradores" replace />} />
 
           {/* Operações, Contratos & SSMA */}
+          <Route path="/medicao-porto" element={<Navigate to="/medicao-porto/lancamentos" replace />} />
+          <Route path="/medicao-porto/:tab" element={<PageGuard pageKey="medicao_porto"><MedicaoPorto /></PageGuard>} />
           <Route path="/cco" element={<PageGuard pageKey="cco"><CCO /></PageGuard>} />
           <Route path="/cco/:tab" element={<PageGuard pageKey="cco"><CCO /></PageGuard>} />
           <Route path="/eventos" element={<PageGuard pageKey="eventos"><Eventos /></PageGuard>} />

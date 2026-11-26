@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { Activity, Users, Clock, Palmtree, Stethoscope, Settings, AlertTriangle, MoreHorizontal, Radio } from 'lucide-react';
+import { Activity, Users, Clock, Palmtree, Stethoscope, Settings, AlertTriangle, MoreHorizontal, Radio, Calculator } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useAuth } from '@/contexts/AuthContext';
@@ -13,6 +13,7 @@ const mainItems = [
 ];
 
 const moreItems = [
+  { to: '/medicao-porto/lancamentos', icon: Calculator, label: 'Medição Porto', key: 'medicao_porto' },
   { to: '/atestados', icon: Stethoscope, label: 'Atestados', key: 'atestados' },
   { to: '/cco', icon: Radio, label: 'CCO', key: 'cco' },
   { to: '/eventos', icon: AlertTriangle, label: 'Eventos SSMA', key: 'eventos' },

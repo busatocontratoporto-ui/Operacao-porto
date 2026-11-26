@@ -4,7 +4,8 @@ import {
   LayoutDashboard, Settings,
   Users, Shield, LogOut, AlertTriangle,
   Briefcase, FileWarning, Activity,
-  Clock, Truck, Wrench, PanelLeftClose, PanelLeftOpen, FileSpreadsheet, Stethoscope, Palmtree
+  Clock, Truck, Wrench, PanelLeftClose, PanelLeftOpen, FileSpreadsheet, Stethoscope, Palmtree,
+  Calculator, Gauge, ArrowLeftRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
@@ -45,6 +46,15 @@ const navGroups: NavGroup[] = [
       { to: '/cco/medicao', icon: Truck, label: 'Boletim de Medição por Placa', key: 'cco_medicao' },
       { to: '/cco/relatorios', icon: Wrench, label: 'Histórico & Exportação', key: 'cco_relatorios' },
       { to: '/cco/cadastros', icon: Settings, label: 'Gestão de Cadastros', key: 'cco_cadastros' },
+    ],
+  },
+  {
+    label: 'Medição Porto',
+    items: [
+      { to: '/medicao-porto/lancamentos', icon: FileSpreadsheet, label: 'Lançamentos', key: 'medicao_porto' },
+      { to: '/medicao-porto/df', icon: Gauge, label: 'DF (Aderência)', key: 'medicao_porto' },
+      { to: '/medicao-porto/bd-vale', icon: ArrowLeftRight, label: 'BD Vale', key: 'medicao_porto' },
+      { to: '/medicao-porto/memoria', icon: Calculator, label: 'Memória de Cálculo', key: 'medicao_porto' },
     ],
   },
   {
